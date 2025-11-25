@@ -1,6 +1,6 @@
 {
   "name": "@arvo-tools/agentic",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Agentic toolset for building applications using arvo-core and arvo-event-handler",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
