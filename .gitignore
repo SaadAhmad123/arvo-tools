@@ -2,9 +2,6 @@ node_modules
 dist
 *.tsbuildinfo
 .turbo
-.changeset/*.md
-!.changeset/README.md
-!.changeset/config.json
 *.log
 npm-debug.log*
 pnpm-debug.log*
