@@ -22,8 +22,9 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true,
-    "types": ["vitest/globals", "node"]
+    "types": ["vitest/globals", "node"],
+    "noErrorTruncation": true,
+    "skipLibCheck": true
   },
   "exclude": ["node_modules", "dist", "coverage"]
 }
