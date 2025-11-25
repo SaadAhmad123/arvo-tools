@@ -1,0 +1,39 @@
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - COLLECTOR_OTLP_HTTP_HOST_PORT=:4318
+      - COLLECTOR_OTLP_GRPC_HOST_PORT=:4317
+    ports:
+      - "4318:4318"    # OTLP HTTP receiver
+      - "16686:16686"  # Jaeger UI
+    networks:
+      - jaeger-network
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    ports:
+      - "6006:6006"    # Phoenix UI & traces
+    networks:
+      - jaeger-network  
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "6001:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - jaeger
+      - phoenix
+    networks:
+      - jaeger-network
+
+networks:
+  jaeger-network:
+    driver: bridge
