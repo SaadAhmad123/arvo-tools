@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { version } from '../src';
+import { hello } from '../src';
 
 describe('@arvo-tools/agentic', () => {
   it('should export version', () => {
-    expect(version).toBeDefined();
-    expect(typeof version).toBe('string');
+    expect(hello()).toBeDefined();
+    expect(hello()).toBe('world');
   });
 });

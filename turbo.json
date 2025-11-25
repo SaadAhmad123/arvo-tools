@@ -9,16 +9,16 @@
     },
     "test": {
       "dependsOn": ["build"],
-      "outputs": ["coverage/**"],
-      "inputs": ["src/**/*.ts", "**/*.test.ts", "**/*.spec.ts", "vitest.config.ts"]
-    },
-    "test:watch": {
-      "cache": false,
-      "persistent": true
+      "outputs": [],
+      "inputs": ["src/**/*.ts", "**/*.test.ts", "**/*.spec.ts", "vitest.config.mts"]
     },
     "test:coverage": {
       "dependsOn": ["build"],
       "outputs": ["coverage/**"]
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
     },
     "lint": {
       "outputs": []
