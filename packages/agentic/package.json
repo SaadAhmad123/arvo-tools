@@ -41,7 +41,7 @@
     "arvo-core": "^3.0.19",
     "arvo-event-handler": "^3.0.19",
     "openai": "^6.9.1",
-    "uuid": "^13.0.0",
+    "uuid": "^11.1.0",
     "zod": "^3.25.74",
     "zod-to-json-schema": "^3.24.6"
   },
