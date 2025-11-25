@@ -1,46 +1,41 @@
 {
-	"$schema": "https://turbo.build/schema.json",
-	"globalDependencies": ["tsconfig.base.json"],
-	"tasks": {
-		"build": {
-			"dependsOn": ["^build"],
-			"outputs": ["dist/**", ".turbo/**"],
-			"inputs": ["src/**/*.ts", "package.json", "tsconfig.json"]
-		},
-		"test": {
-			"dependsOn": ["build"],
-			"outputs": ["coverage/**"],
-			"inputs": [
-				"src/**/*.ts",
-				"**/*.test.ts",
-				"**/*.spec.ts",
-				"vitest.config.ts"
-			]
-		},
-		"test:watch": {
-			"cache": false,
-			"persistent": true
-		},
-		"test:coverage": {
-			"dependsOn": ["build"],
-			"outputs": ["coverage/**"]
-		},
-		"lint": {
-			"outputs": []
-		},
-		"format": {
-			"outputs": []
-		},
-		"type-check": {
-			"dependsOn": ["^type-check"],
-			"outputs": ["*.tsbuildinfo"]
-		},
-		"clean": {
-			"cache": false
-		},
-		"dev": {
-			"cache": false,
-			"persistent": true
-		}
-	}
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["tsconfig.base.json"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".turbo/**"],
+      "inputs": ["src/**/*.ts", "package.json", "tsconfig.json"]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"],
+      "inputs": ["src/**/*.ts", "**/*.test.ts", "**/*.spec.ts", "vitest.config.ts"]
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"]
+    },
+    "lint": {
+      "outputs": []
+    },
+    "format": {
+      "outputs": []
+    },
+    "type-check": {
+      "dependsOn": ["^type-check"],
+      "outputs": ["*.tsbuildinfo"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
 }
