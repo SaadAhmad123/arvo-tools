@@ -24,11 +24,11 @@
     "cloudevent",
     "opentelemetry"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "Saad Ahmad <saadkwi12@hotmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-org/arvo-tools.git",
+    "url": "https://github.com/SaadAhmad123/arvo-tools.git",
     "directory": "packages/agentic"
   },
   "publishConfig": {
