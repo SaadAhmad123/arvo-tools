@@ -1,7 +1,6 @@
 export { createArvoAgent } from './Agent';
-
 export { AgentDefaults } from './Agent/AgentDefaults';
-
+export { createAgentTool } from './Agent/agentTool';
 export {
   AgentMediaContentSchema,
   AgentMessageContentSchema,
@@ -10,7 +9,6 @@ export {
   AgentToolCallContentSchema,
   AgentToolResultContentSchema,
 } from './Agent/schema';
-
 export type {
   AgentContextBuilder,
   AgentInternalTool,
@@ -33,6 +31,15 @@ export type {
   NonEmptyArray,
   PromiseLike,
 } from './Agent/types';
+export {
+  setOpenInferenceInputAttr,
+  setOpenInferenceResponseOutputAttr,
+  setOpenInferenceToolCallOutputAttr,
+  setOpenInferenceUsageOutputAttr,
+  tryParseJson,
+} from './Agent/utils';
+export { MCPClient } from './Integrations/MCPClient';
+export { openaiLLMIntegration } from './Integrations/openai';
 
 export type { IMCPClient } from './interfaces.mcp';
 export type { OtelInfoType } from './types';
