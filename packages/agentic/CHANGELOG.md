@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 0.4.1
+
+### Patch Changes
+
+- 75d6821: Fixed UUID version
+
 ## 0.4.0
 
 ### Minor Changes
