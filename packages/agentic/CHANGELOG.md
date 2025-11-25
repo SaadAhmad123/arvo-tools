@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 0.3.0
+
+### Minor Changes
+
+- 49e0174: Added ArvoAgent
+
 ## 0.2.0
 
 ### Minor Changes
