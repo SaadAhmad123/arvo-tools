@@ -8,3 +8,4 @@ fi
 pnpm format
 pnpm lint
 pnpm test
+pnpm changeset
