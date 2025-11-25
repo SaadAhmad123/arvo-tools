@@ -1,0 +1,47 @@
+{
+  "name": "@arvo-tools/agentic",
+  "version": "0.1.0",
+  "description": "Agentic toolset for building applications using arvo-core and arvo-event-handler",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check --fix .",
+    "format": "biome format --write .",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "arvo",
+    "event-driven architecture",
+    "agentic",
+    "cloudevent",
+    "opentelemetry"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/arvo-tools.git",
+    "directory": "packages/agentic"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "arvo-core": "^3.0.19",
+    "arvo-event-handler": "^3.0.19"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

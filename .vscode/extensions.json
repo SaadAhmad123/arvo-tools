@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "biomejs.biome",
+    "statelyai.stately-vscode",
+    "vitest.explorer",
+    "editorconfig.editorconfig"
+  ]
+}
