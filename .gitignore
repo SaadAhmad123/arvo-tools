@@ -31,3 +31,4 @@ Thumbs.db
 *.temp
 .cache
 .npmrc
+.github/workflows/*.log
