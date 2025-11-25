@@ -10,5 +10,6 @@ export default defineConfig({
       exclude: ['node_modules/', 'dist/', '**/*.test.ts', '**/*.spec.ts', '**/tests/**'],
     },
     passWithNoTests: true,
+    setupFiles: ['vitest.setup.ts'],
   },
 });
