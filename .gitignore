@@ -32,3 +32,4 @@ Thumbs.db
 .cache
 .npmrc
 .github/workflows/*.log
+.husky/_
