@@ -14,13 +14,16 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "postinstall": "git config branch.main.pushRemote no_push || true",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.7",
     "@changesets/cli": "^2.29.7",
     "@types/node": "^24.10.1",
     "@vitest/coverage-v8": "^4.0.13",
+    "husky": "^9.1.7",
     "turbo": "^2.6.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.13"

@@ -20,6 +20,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.0.13
         version: 4.0.13(vitest@4.0.13(@opentelemetry/api@1.9.0)(@types/node@24.10.1))
+      husky:
+        specifier: ^9.1.7
+        version: 9.1.7
       turbo:
         specifier: ^2.6.1
         version: 2.6.1
@@ -705,6 +708,11 @@ packages:
 
   human-id@4.1.2:
     resolution: {integrity: sha512-v/J+4Z/1eIJovEBdlV5TYj1IR+ZiohcYGRY+qN/oC9dAfKzVT023N/Bgw37hrKCoVRBvk3bqyzpr2PP5YeTMSg==}
+    hasBin: true
+
+  husky@9.1.7:
+    resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
+    engines: {node: '>=18'}
     hasBin: true
 
   iconv-lite@0.7.0:
@@ -1761,6 +1769,8 @@ snapshots:
   html-escaper@2.0.2: {}
 
   human-id@4.1.2: {}
+
+  husky@9.1.7: {}
 
   iconv-lite@0.7.0:
     dependencies:
