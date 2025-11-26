@@ -8,6 +8,32 @@ import type z from 'zod/v3/external.cjs';
 import type { OtelInfoType } from '../types';
 import type { AgentInternalTool } from './types';
 
+/**
+ * Factory function to create an Instrumented Agent Tool.
+ *
+ * Wraps your raw tool logic with **OpenTelemetry Auto-Instrumentation** and **Input Validation**.
+ *
+ * **Why use this instead of a raw object?**
+ * 1. **Observability:** Automatically creates a child Span (`OpenInferenceSpanKind.TOOL`).
+ *    It records input arguments, output values, and execution duration to your tracing backend.
+ * 2. **Safety:** Automatically validates `input` against the Zod schema *before* your function runs.
+ *    Throws a clear error if the LLM hallucinated invalid arguments.
+ * 3. **Type Safety:** Infers generic types for `input` and `output` automatically.
+ *
+ * @param param - The tool definition.
+ * @returns The wrapped, production-ready tool.
+ *
+ * @example
+ * ```ts
+ * const timeTool = createAgentTool({
+ *   name: 'get_time',
+ *   description: 'Returns current server time',
+ *   input: z.object({}),
+ *   output: z.object({ time: z.string() }),
+ *   fn: () => ({ time: new Date().toISOString() })
+ * });
+ * ```
+ */
 export const createAgentTool = <
   TInputSchema extends z.ZodTypeAny,
   TOutputSchema extends z.ZodTypeAny,

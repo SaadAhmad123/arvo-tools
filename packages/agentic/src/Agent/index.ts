@@ -149,6 +149,9 @@ export const createArvoAgent = <
           try {
             const contextBuilder = handler[ver as ArvoSemanticVersion]?.context;
             const outputBuilder = handler[ver as ArvoSemanticVersion]?.output;
+            const thisVersionLlmIntegration = handler[ver as ArvoSemanticVersion]?.llm ?? llm;
+            const versionLlmResponseType =
+              handler[ver as ArvoSemanticVersion]?.llmResponseType ?? llmResponseType;
             const selfVersionedContract = contracts.self.version(ver as ArvoSemanticVersion);
             const outputFormat =
               selfVersionedContract.emits[selfVersionedContract.metadata.completeEventType];
@@ -191,8 +194,8 @@ export const createArvoAgent = <
                   tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
                   outputFormat,
                   outputBuilder: outputBuilder,
-                  llmResponseType,
-                  llm,
+                  llmResponseType: versionLlmResponseType,
+                  llm: thisVersionLlmIntegration,
                   mcp: mcp ?? null,
                   toolInteraction,
                   currentTotalExecutionUnits: 0,
@@ -278,8 +281,8 @@ export const createArvoAgent = <
                 tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
                 outputFormat,
                 outputBuilder: outputBuilder,
-                llmResponseType,
-                llm,
+                llmResponseType: versionLlmResponseType,
+                llm: thisVersionLlmIntegration,
                 mcp: mcp ?? null,
                 toolInteraction,
                 currentTotalExecutionUnits: resumedContext.totalExecutionUnits,

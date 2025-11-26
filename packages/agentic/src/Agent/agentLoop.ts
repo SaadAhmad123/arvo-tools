@@ -215,7 +215,10 @@ export const agentLoop = async (
               } else if (resolvedToolDef.serverConfig.kind === 'arvo') {
                 const zodParseResult = (
                   resolvedToolDef.serverConfig.contract?.accepts.schema as z.ZodTypeAny
-                ).safeParse(item.input);
+                ).safeParse({
+                  ...item.input,
+                  parentSubject$$: null,
+                });
                 if (zodParseResult?.error) {
                   messages.push({
                     role: 'user',
@@ -233,6 +236,7 @@ export const agentLoop = async (
                 } else {
                   arvoToolCalls.push({
                     ...toolCallContent,
+                    input: zodParseResult.data,
                     name:
                       resolvedToolDef.serverConfig.contract?.accepts.type ??
                       resolvedToolDef.serverConfig.name,

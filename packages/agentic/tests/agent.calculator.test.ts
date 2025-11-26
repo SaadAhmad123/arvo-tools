@@ -35,7 +35,7 @@ const tests: ArvoTestSuite = {
       steps: [
         {
           input: () =>
-            createArvoEventFactory(calculatorAgentContract.version('1.0.0')).accepts({
+            createArvoEventFactory(calculatorAgentContract.version('2.0.0')).accepts({
               source: TEST_EVENT_SOURCE,
               data: {
                 message:
