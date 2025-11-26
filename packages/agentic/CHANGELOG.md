@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.0.0
+
+### Major Changes
+
+- 0bc6465: Releasing production version of the Arvo Agent
+
 ## 0.4.1
 
 ### Patch Changes
