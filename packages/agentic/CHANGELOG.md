@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.0.1
+
+### Patch Changes
+
+- 0de51dc: Bugfix: Fixed subject correlation for nested orchestration
+
 ## 1.0.0
 
 ### Major Changes
