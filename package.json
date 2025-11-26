@@ -38,6 +38,7 @@
     "@opentelemetry/semantic-conventions": "^1.36.0",
     "@types/node": "^24.10.1",
     "@vitest/coverage-v8": "^4.0.13",
+    "dotenv": "^17.2.3",
     "husky": "^9.1.7",
     "turbo": "^2.6.1",
     "typescript": "^5.9.3",

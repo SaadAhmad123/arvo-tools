@@ -2,11 +2,11 @@ import { SemanticConventions as OpenInferenceSemanticConventions } from '@arizea
 import type { Span } from '@opentelemetry/api';
 import type { ArvoSemanticVersion, VersionedArvoContract } from 'arvo-core';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { AgentInternalTool } from '../AgentTool/types';
+import type { AgentLLMIntegrationOutput } from '../Integrations/types';
 import type { IMCPClient } from '../interfaces.mcp';
 import type { OtelInfoType } from '../types';
 import type {
-  AgentInternalTool,
-  AgentLLMIntegrationOutput,
   AgentMessage,
   AgentServiceContract,
   AgentToolCallContent,
@@ -14,6 +14,12 @@ import type {
   AnyArvoContract,
 } from './types.js';
 
+/**
+ * Transforms a map of Arvo Service Contracts into LLM-compatible Tool Definitions.
+ *
+ * This function extracts the `accepts` schema from the contract, strips out internal
+ * Arvo fields (like `parentSubject$$`), and formats it for the LLM's context window.
+ */
 export const generateServiceToolDefinitions = <
   TServiceContract extends Record<string, AgentServiceContract>,
 >(
@@ -54,6 +60,11 @@ export const generateServiceToolDefinitions = <
   };
 };
 
+/**
+ * Fetches available tools from a connected MCP Client and adapts them to the Agent's internal format.
+ *
+ * This runs at runtime during the Agent execution loop to ensure the tool list is current.
+ */
 export const generateMcpToolDefinitions = async (
   mcp: IMCPClient | null,
   config: { otelInfo: OtelInfoType },
@@ -78,6 +89,10 @@ export const generateMcpToolDefinitions = async (
   ) as Record<string, AgentToolDefinition<null>>;
 };
 
+/**
+ * Converts local `AgentInternalTool` definitions (Zod schemas) into JSON Schema for the LLM.
+ * Uses `zod-to-json-schema` for the conversion.
+ */
 export const generateAgentInternalToolDefinitions = <
   TTools extends Record<string, AgentInternalTool>,
 >(
@@ -104,9 +119,19 @@ export const generateAgentInternalToolDefinitions = <
   };
 };
 
+/** Helper utility to truncate long strings (e.g. Base64 images) in logs/traces. */
 export const clampStr = (s: string, len: number): string =>
   s.length > len ? `${s.slice(0, len)}...` : s;
 
+/**
+ * Populates the OpenTelemetry Span with all LLM Input data using OpenInference Semantic Conventions.
+ *
+ * This records:
+ * 1. The LLM Config (Provider, Model, System Prompt).
+ * 2. The full Conversation History (mapped from Arvo format to OpenInference format).
+ * 3. Tool Definitions (so traces show what tools were available).
+ * 4. Multi-modal content (Image/File placeholders).
+ */
 export const setOpenInferenceInputAttr = (
   param: {
     llm: {
@@ -201,6 +226,10 @@ export const setOpenInferenceInputAttr = (
   }
 };
 
+/**
+ * Records the LLM's generated Tool Calls to the OpenTelemetry Span.
+ * Adds attributes for Function Name and JSON Arguments.
+ */
 export const setOpenInferenceToolCallOutputAttr = (
   param: {
     toolCalls: Omit<AgentToolCallContent, 'type'>[];
@@ -232,6 +261,9 @@ export const setOpenInferenceToolCallOutputAttr = (
   }
 };
 
+/**
+ * Records Token Usage metrics (Prompt, Completion, Total) to the OpenTelemetry Span.
+ */
 export const setOpenInferenceUsageOutputAttr = (
   param: AgentLLMIntegrationOutput['usage'],
   span: Span,
@@ -246,6 +278,9 @@ export const setOpenInferenceUsageOutputAttr = (
   }
 };
 
+/**
+ * Records the LLM's final textual response to the OpenTelemetry Span.
+ */
 export const setOpenInferenceResponseOutputAttr = (
   param: {
     response: string;
@@ -262,6 +297,7 @@ export const setOpenInferenceResponseOutputAttr = (
   });
 };
 
+/** Safe wrapper around JSON.parse that returns null instead of throwing. */
 export const tryParseJson = (str: string): Record<string, unknown> | null => {
   try {
     return JSON.parse(str);
@@ -270,6 +306,13 @@ export const tryParseJson = (str: string): Record<string, unknown> | null => {
   }
 };
 
+/**
+ * Implements the Priority-Based Execution logic.
+ *
+ * Takes a list of requested tool calls, groups them by their configured priority,
+ * and returns **only** the batch with the highest priority. All lower priority
+ * calls are discarded.
+ */
 export const prioritizeToolCalls = (
   toolCalls: Omit<AgentToolCallContent, 'type'>[],
   nameToToolMap: Record<string, AgentToolDefinition>,
