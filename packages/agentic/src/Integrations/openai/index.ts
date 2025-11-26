@@ -3,28 +3,36 @@ import {
   OpenInferenceSpanKind,
 } from '@arizeai/openinference-semantic-conventions';
 import { SpanStatusCode } from '@opentelemetry/api';
-import { ArvoOpenTelemetry, cleanString } from 'arvo-core';
+import { ArvoOpenTelemetry, exceptionToSpan } from 'arvo-core';
 import type OpenAI from 'openai';
 import type { ChatCompletionMessageParam, ChatCompletionTool } from 'openai/resources/index.mjs';
 import type { ChatModel } from 'openai/resources/shared.mjs';
 import type { ChatCompletionMessageFunctionToolCall } from 'openai/resources.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import type {
-  AgentLLMIntegration,
-  AgentLLMIntegrationOutput,
-  AgentLLMIntegrationParam,
-  AgentMessage,
-  AgentToolCallContent,
-  AgentToolResultContent,
-} from '../Agent/types';
+import type { AgentMessage, AgentToolCallContent, AgentToolResultContent } from '../../Agent/types';
 import {
   setOpenInferenceInputAttr,
   setOpenInferenceResponseOutputAttr,
   setOpenInferenceToolCallOutputAttr,
   setOpenInferenceUsageOutputAttr,
   tryParseJson,
-} from '../Agent/utils';
+} from '../../Agent/utils';
+import { DEFAULT_TOOL_LIMIT_PROMPT } from '../prompts';
+import type {
+  AgentLLMIntegration,
+  AgentLLMIntegrationOutput,
+  AgentLLMIntegrationParam,
+} from '../types';
 
+/**
+ * Internal Adapter: Maps Arvo's generic Agent Message format to OpenAI's specific API format.
+ *
+ * Handles:
+ * - System Prompt injection.
+ * - Mapping Tool Results to their originating Tool Call IDs.
+ * - Multimodal Content (converting Arvo media objects to OpenAI Image/File URLs).
+ * - Reconstructs the specific message ordering OpenAI expects (User -> Assistant(ToolCall) -> Tool(Result)).
+ */
 const formatMessagesForOpenAI = (
   messages: AgentLLMIntegrationParam['messages'],
   systemPrompt: string | null,
@@ -111,14 +119,29 @@ const formatMessagesForOpenAI = (
   return formattedMessages;
 };
 
+/**
+ * Creates an Arvo-compatible LLM Adapter for OpenAI models (GPT-4, GPT-3.5, etc.).
+ *
+ * This integration handles the complexity of:
+ * 1. **Structured Outputs:** Automatically converts Zod schemas to OpenAI `json_schema` format when required.
+ * 2. **Context Optimization:** Automatically strips large media payloads (images/files) from the history during resume/tool-result cycles to save tokens.
+ * 3. **Observability:** Instruments every call with OpenInference-compliant OpenTelemetry attributes.
+ * 4. **Safety:** Injects a tool limit prompt when the Agent exhausts its tool budget (customizable via `toolLimitPrompt`).
+ *
+ * @param client - An initialized `OpenAI` SDK client instance.
+ * @param config - Configuration for model behavior (Model ID, Temperature, Max Tokens) and cost calculation logic.
+ * @param config.toolLimitPrompt - Custom system instruction to inject when `maxToolInteractions` logic is triggered. useful for guiding the model to summarize or fail gracefully.
+ * @returns An `AgentLLMIntegration` function ready to be passed to `createArvoAgent`.
+ */
 export const openaiLLMIntegration =
   (
     client: OpenAI,
     config?: {
-      model: ChatModel;
+      model?: ChatModel;
       temperature?: number;
       maxTokens?: number;
       executionunits?: (prompt: number, completion: number) => number;
+      toolLimitPrompt?: (toolInteractions: AgentLLMIntegrationParam['toolInteractions']) => string;
     },
   ): AgentLLMIntegration =>
   async (
@@ -145,14 +168,14 @@ export const openaiLLMIntegration =
         };
 
         const messages: AgentMessage[] = _messages.map((item) => {
-          if (lifecycle === 'init') return item;
-          if (item.content.type === 'media') {
+          if (item.content.type === 'media' && item.seenCount > 0) {
             return {
               role: item.role,
               content: {
                 type: 'text',
                 content: `Media file (type: ${item.content.contentType.type}@${item.content.contentType.format}) already parsed and looked at. No need for you to look at it again`,
               },
+              seenCount: item.seenCount,
             };
           }
           return item;
@@ -160,20 +183,15 @@ export const openaiLLMIntegration =
         let system = _system;
 
         if (toolInteractions.exhausted) {
-          const limitMessage = cleanString(`
-            **CRITICAL WARNING: You have reached your tool interaction limit!**
-            You must answer the original question using all the data available to you. 
-            You have run out of tool call budget. No more tool calls are allowed any more.
-            If you cannot answer the query well. Then mention what you have done briefly, what
-            can you answer based on the collected data, what data is missing and why you cannot 
-            answer any further.  
-          `);
+          const limitMessage =
+            config?.toolLimitPrompt?.(toolInteractions) ?? DEFAULT_TOOL_LIMIT_PROMPT;
           messages.push({
             role: 'user',
             content: {
               type: 'text',
               content: limitMessage,
             },
+            seenCount: 0,
           });
           system = `${system}\n\n${limitMessage}`;
         }
@@ -223,8 +241,10 @@ export const openaiLLMIntegration =
 
           const completion = await client.chat.completions.create({
             model: llmModel,
-            max_tokens: llmInvocationParams.maxTokens,
-            temperature: llmInvocationParams.temperature,
+            ...(llmModel.includes('gpt-5')
+              ? { max_completion_tokens: llmInvocationParams.maxTokens }
+              : { max_tokens: llmInvocationParams.maxTokens }),
+            temperature: llmModel.includes('gpt-5') ? 1 : llmInvocationParams.temperature,
             tools: toolDef.length ? toolDef : undefined,
             messages: formattedMessages,
             response_format: responseFormat,
@@ -253,8 +273,8 @@ export const openaiLLMIntegration =
                   name: toolCall.function.name,
                   input: JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
                 });
-              } catch {
-                // Skip malformed tool calls
+              } catch (err) {
+                exceptionToSpan(err as Error, span);
               }
             }
 
@@ -269,7 +289,13 @@ export const openaiLLMIntegration =
             }
           }
 
-          const content = choice?.message?.content ?? '';
+          let content = choice?.message?.content ?? '';
+          if (choice.finish_reason === 'length') {
+            content = `${content} [Max response token limit ${llmInvocationParams.maxTokens} reached]`;
+          }
+          if (choice.finish_reason === 'content_filter') {
+            content = `${content} [Request blocked due to OpenAI content filtering policies]`;
+          }
           setOpenInferenceResponseOutputAttr({ response: content }, span);
           if (outputFormat.type === 'json') {
             return {

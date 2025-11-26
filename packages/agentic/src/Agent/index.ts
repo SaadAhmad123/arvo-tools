@@ -4,15 +4,14 @@ import {
   type ArvoResumableState,
   createArvoResumable,
 } from 'arvo-event-handler';
-import type { OtelInfoType } from '../types.js';
+import type { AgentInternalTool } from '../AgentTool/types.js';
+import type { NonEmptyArray, OtelInfoType } from '../types.js';
 import { agentLoop } from './agentLoop.js';
 import type {
-  AgentInternalTool,
   AgentMessage,
   AgentServiceContract,
   AnyArvoOrchestratorContract,
   CreateArvoAgentParam,
-  NonEmptyArray,
 } from './types.js';
 import {
   generateAgentInternalToolDefinitions,
@@ -20,7 +19,7 @@ import {
   generateServiceToolDefinitions,
 } from './utils.js';
 
-type AgentState = {
+export type AgentState = {
   currentSubject: string;
   system: string | null;
   messages: AgentMessage[];
@@ -32,6 +31,79 @@ type AgentState = {
   totalExecutionUnits: number;
 };
 
+/**
+ * Creates a fully-featured AI Agent implemented as an Arvo Resumable Event Handler.
+ *
+ * This factory transforms a standard Large Language Model (LLM) into a stateful, event-driven
+ * participant in your system. Unlike standard chatbots, this Agent can interact with:
+ * 1. **Local Tools**: Async/Sync JavaScript functions executed immediately.
+ * 2. **MCP Servers**: External data sources via the Model Context Protocol.
+ * 3. **Arvo Services**: Other Event Handlers in your Arvo distributed system (Async/Distributed tools).
+ *
+ * @remarks
+ * **The Execution Model:**
+ * The Agent operates on a **Start-Stop-Resume** cycle:
+ * 1. **Init**: Receives an event -> Builds Context -> Calls LLM.
+ * 2. **Action**:
+ *    - If the LLM chooses a `tool` or `mcp`, it executes immediately and loops back.
+ *    - If the LLM chooses a `service`, the Agent **emits an event** and **suspends execution**.
+ *    - The LLM can choose a mix all three modalities at the same time.
+ * 3. **Resume**: When the Service replies with an event, the Agent wakes up, restores state from `memory`,
+ *    adds the result to its history, and calls the LLM again.
+ *
+ * **Strict Versioning Compliance:**
+ * Arvo enforces that your Agent implementation matches your Contract versions.
+ * If your `self` contract defines versions `'1.0.0'` and `'2.0.0'`, you must
+ * provide specific `context` (A context builder function which runs at init of the agent
+ * execution and is reponsible for building the context of the agent i.e. system promot
+ * and messages list, both are optional) and `output` builder, which takes the LLM output
+ * and converts it into yor contract compliant structure,for *all* versions
+ * in the `handler` parameter.
+ *
+ *  This allows you to:
+ * - Safely evolve prompt engineering strategies (e.g., v1 uses GPT-3.5, v2 uses GPT-4).
+ * - Run different tests on Agent behavior within the same deployment.
+ * - Retire old Agent behaviors gradually without breaking existing clients.
+ *
+ * @param param - Configuration object for the Agent.
+ *
+ * @returns An `ArvoResumable` instance specialised to run as an AI Agent.
+ *
+ * @example
+ * ```typescript
+ * export const supportAgent = ({ memory }) => createArvoAgent({
+ *   contracts: {
+ *     self: supportAgentContract, // The interface for this agent
+ *     services: {
+ *       // The Agent can "call" this service by emitting an event
+ *       // and going to sleep until the billing service replies.
+ *       billing: { contract: billingServiceContract.version('1.0.0') }
+ *     }
+ *   },
+ *   tools: {
+ *     // The Agent can execute this immediately in-memory
+ *     checkTime: createAgentTool({
+ *       name: 'check_time',
+ *       description: 'Checks current server time',
+ *       input: z.object({}),
+ *       output: z.object({ time: z.string() }),
+ *       fn: async () => ({ time: new Date().toISOString() })
+ *     })
+ *   },
+ *   llm: openaiLLMIntegration(new OpenAI(), { model: 'gpt-4o' }),
+ *   memory: memory, // Persists chat history during async calls
+ *   handler: {
+ *     '1.0.0': {
+ *       // Dynamic System Prompt Building
+ *       context: AgentDefaults.CONTEXT_BUILDER(async ({ tools }) =>
+ *         `You are a support agent. You have access to billing data via the ${tools.services.billing.name} tool.`
+ *       ),
+ *       output: AgentDefaults.OUTPUT_BUILDER
+ *     }
+ *   }
+ * });
+ * ```
+ */
 export const createArvoAgent = <
   TSelfContract extends AnyArvoOrchestratorContract,
   TServiceContract extends Record<string, AgentServiceContract>,
@@ -106,14 +178,16 @@ export const createArvoAgent = <
                 {
                   initLifecycle: 'init',
                   system: llmContext?.system ?? null,
-                  messages: llmContext?.messages?.length
+                  messages: (llmContext?.messages?.length
                     ? llmContext.messages
                     : [
                         {
                           role: 'user',
                           content: { type: 'text', content: JSON.stringify(inputData) },
+                          seenCount: 0,
                         },
-                      ],
+                      ]
+                  ).map((item) => ({ ...item, seenCount: item.seenCount ?? 0 })) as AgentMessage[],
                   tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
                   outputFormat,
                   outputBuilder: outputBuilder,
@@ -192,6 +266,7 @@ export const createArvoAgent = <
                   toolUseId,
                   content: JSON.stringify(data ?? {}),
                 },
+                seenCount: 0,
               });
             }
 

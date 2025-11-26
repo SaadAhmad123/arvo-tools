@@ -4,9 +4,9 @@ import {
 } from '@arizeai/openinference-semantic-conventions';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry, getOtelHeaderFromSpan } from 'arvo-core';
-import type z from 'zod';
-import type { OtelInfoType } from '../types.js';
-import type { AgentInternalTool } from './types.js';
+import type z from 'zod/v3/external.cjs';
+import type { OtelInfoType } from '../types';
+import type { AgentInternalTool } from './types';
 
 export const createAgentTool = <
   TInputSchema extends z.ZodTypeAny,

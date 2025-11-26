@@ -1,14 +1,14 @@
 import type { ArvoSemanticVersion } from 'arvo-core';
 import { v4 } from 'uuid';
 import z from 'zod';
+import type { AgentInternalTool } from '../AgentTool/types.js';
+import type { PromiseAble } from '../types.js';
 import type {
   AgentContextBuilder,
-  AgentInternalTool,
   AgentMessage,
   AgentOutputBuilder,
   AgentServiceContract,
   AnyArvoOrchestratorContract,
-  PromiseLike,
 } from './types.js';
 
 export const AgentDefaults = {
@@ -39,18 +39,20 @@ export const AgentDefaults = {
     >(
       systemPromptBuilder?: (
         param: Parameters<AgentContextBuilder<T, V, TServiceContract, TTools>>[0],
-      ) => PromiseLike<string>,
+      ) => PromiseAble<string>,
     ): AgentContextBuilder<T, V, TServiceContract, TTools> =>
     async (param) => {
       const messages: AgentMessage[] = [
         {
           role: 'user',
           content: { type: 'text', content: param.input.data.message },
+          seenCount: 0,
         },
       ];
 
       for (const item of param.input.data.pdfBase64 ?? []) {
         messages.push({
+          seenCount: 0,
           role: 'user',
           content: {
             type: 'media',
@@ -67,6 +69,7 @@ export const AgentDefaults = {
 
       for (const item of param.input.data.imageBase64 ?? []) {
         messages.push({
+          seenCount: 0,
           role: 'user',
           content: {
             type: 'media',

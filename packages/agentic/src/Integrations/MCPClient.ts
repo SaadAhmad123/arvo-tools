@@ -14,12 +14,32 @@ import type { IMCPClient } from '../interfaces.mcp.js';
 import type { OtelInfoType } from '../types.js';
 
 /**
- * Model Context Protocol (MCP) client implementation for connecting to and interacting with MCP servers.
+ * A Production-grade Client for the Model Context Protocol (MCP).
  *
- * This client provides a robust interface for establishing connections to MCP servers,
- * discovering available tools, invoking those tools with arguments, and managing the
- * connection lifecycle. It supports both Server-Sent Events (SSE) and streamable HTTP
- * transport protocols, automatically selecting the appropriate transport based on the URL.
+ * This class bridges Arvo Agents with the external MCP ecosystem, allowing agents to
+ * interact with filesystem, databases, GitHub, Slack, and other standardized MCP servers.
+ *
+ * @remarks
+ * **Key Features:**
+ * - **Auto-Transport Selection:** Automatically chooses between `SSEClientTransport` and
+ *   `StreamableHTTPClientTransport` based on the URL pattern (checks for `/mcp` suffix).
+ * - **Orchestration Control:** Supports mapping priorities to external tools, allowing
+ *   MCP tools to participate in Arvo's **Priority Batch Execution** logic.
+ * - **Observability:** Deep integration with Arvo's OpenTelemetry system to trace
+ *   connection status and tool execution metrics.
+ * - **Tool Caching:** Discovers and caches tool definitions upon connection to minimize latency
+ *   during the Agent's reasoning loop.
+ *
+ * @example
+ * ```ts
+ * const mcp = new MCPClient({
+ *   url: 'http://localhost:8080/sse',
+ *   // Give the 'delete_file' tool high priority so it executes before other tools
+ *   toolPriority: {
+ *     'delete_file': 100
+ *   }
+ * });
+ * ```
  */
 export class MCPClient implements IMCPClient {
   private client: Client | null;
@@ -27,31 +47,41 @@ export class MCPClient implements IMCPClient {
   private availableTools: Tool[];
   private readonly url: () => string;
   private readonly requestInit: () => RequestInit;
+  private readonly toolPriority: () => Record<string, number>;
 
+  /**
+   * Creates a new MCP Client.
+   *
+   * @param param - Configuration object or a Lazy Configuration function.
+   *
+   * **Why use a function?**
+   * Using a function is recommended if the URL, Auth Headers, or Tool Priorities
+   * need to be resolved at **Runtime** (e.g., fetched from a Secrets Manager or Env Var)
+   * rather than at **Instantiation time**.
+   */
   constructor(
     param:
-      | { url: string; requestInit?: RequestInit }
-      | (() => { url: string; requestInit?: RequestInit }),
+      | { url: string; toolPriority?: Record<string, number>; requestInit?: RequestInit }
+      | (() => { url: string; toolPriority?: Record<string, number>; requestInit?: RequestInit }),
   ) {
     this.client = null;
     this.isConnected = false;
     this.availableTools = [];
     this.url = () => (typeof param === 'function' ? param() : param).url;
     this.requestInit = () => (typeof param === 'function' ? param() : param).requestInit ?? {};
+    this.toolPriority = () => (typeof param === 'function' ? param() : param).toolPriority ?? {};
   }
 
   /**
-   * Establishes a connection to the MCP server and discovers available tools.
+   * Initializes the connection to the remote MCP Server.
    *
-   * This method performs the following operations:
-   * 1. Selects the appropriate transport (SSE or HTTP streaming) based on URL
-   * 2. Creates and configures the MCP client with capabilities
-   * 3. Establishes the connection to the server
-   * 4. Retrieves and caches the list of available tools
-   * 5. Logs all operations to the provided OpenTelemetry span
+   * This lifecycle method:
+   * 1. Resolves the Transport (SSE vs HTTP).
+   * 2. Performs the protocol handshake.
+   * 3. Fetches the list of available tools immediately (to populate the Agent's context).
    *
-   * @returns Promise that resolves when connection is established and tools are discovered
-   * @throws {Error} Throws an error if connection fails, with details logged to the span
+   * @param config - Trace context.
+   * @throws Error if the connection fails or handshake is rejected.
    */
   async connect(config: { otelInfo: OtelInfoType }): Promise<void> {
     try {
@@ -98,11 +128,10 @@ export class MCPClient implements IMCPClient {
   }
 
   /**
-   * Retrieves the list of available tool definitions from the connected MCP server.
+   * Returns the Tool Definitions discovered during the `connect()` phase.
    *
-   * Transforms the cached MCP tools into the AgentToolDefinition format required
-   * by the agent system. Tools listed in restrictedTools will have requires_approval set to true.
-   * This method returns an empty array if not connected.
+   * This maps the raw MCP Tool format into Arvo's `AgentToolDefinition` structure
+   * so they can be injected into the LLM's context window.
    */
   async getTools(config: { otelInfo: OtelInfoType }): Promise<
     {
@@ -150,12 +179,13 @@ export class MCPClient implements IMCPClient {
   }
 
   /**
-   * Invokes a specific tool on the MCP server with the provided arguments.
+   * Executes a tool on the remote MCP Server.
    *
-   * This method sends a tool invocation request to the connected MCP server and
-   * returns the result. All operations are logged to the OpenTelemetry span for
-   * observability. If an error occurs during invocation, it returns an error message
-   * rather than throwing, allowing the agent to handle tool failures gracefully.
+   * Wraps the execution in a dedicated OpenTelemetry Child Span (`MCP.invoke<tool_name>`)
+   * to track latency and success/failure rates of the external system.
+   *
+   * @param param - The tool name and argument payload generated by the LLM.
+   * @returns The simplified JSON string result to be fed back to the LLM.
    */
   async invokeTool(
     param: { name: string; arguments?: Record<string, unknown> | null },
@@ -222,11 +252,8 @@ export class MCPClient implements IMCPClient {
   }
 
   /**
-   * Gracefully disconnects from the MCP server and cleans up resources.
-   *
-   * This method safely closes the connection to the MCP server if one exists,
-   * resets the connection state, and clears cached data. It's safe to call
-   * multiple times - subsequent calls will be no-ops if already disconnected.
+   * Terminates the transport session and resets clients state.
+   * Safe to call multiple times (idempotent).
    */
   async disconnect(config: { otelInfo: OtelInfoType }): Promise<void> {
     if (this.client && this.isConnected) {
@@ -252,7 +279,13 @@ export class MCPClient implements IMCPClient {
       );
     }
   }
+
+  /**
+   * Retrieves the priority configuration for MCP Tools.
+   *
+   * This allows external MCP tools to explicitly participate in Arvo's **Priority Batch Execution**.
+   */
   async getToolPriority() {
-    return {};
+    return this.toolPriority();
   }
 }
