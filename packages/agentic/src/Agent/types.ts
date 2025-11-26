@@ -335,7 +335,7 @@ export type CreateArvoAgentParam<
   tools?: TTools;
 
   /**
-   * Forces the Agent to generate a specific output structure.
+   * The default mechanism to force the Agent to generate a specific output structure.
    * - `'text'`: Standard conversational response.
    * - `'json'`: Structured Output / JSON Mode (validated against the contract's output schema).
    * @defaultValue 'text'
@@ -343,7 +343,7 @@ export type CreateArvoAgentParam<
   llmResponseType?: AgentLLMIntegrationParam['outputFormat']['type'];
 
   /**
-   * The integration function that connects this generic loop to a specific provider
+   * The default llm integrations function which connect this agent to the intelligence layer
    * (e.g., `openaiLLMIntegration`, `anthropicLLMIntegration`).
    */
   llm: AgentLLMIntegration;
@@ -358,6 +358,14 @@ export type CreateArvoAgentParam<
    */
   handler: {
     [K in keyof TSelfContract['versions'] & ArvoSemanticVersion]: {
+      /**
+       * An optional override to forces the Agent to generate a specific output structure.
+       * - `'text'`: Standard conversational response.
+       * - `'json'`: Structured Output / JSON Mode (validated against the contract's output schema).
+       */
+      llmResponseType?: AgentLLMIntegrationParam['outputFormat']['type'];
+      /** An optional override llm integration specific to this version. This allows to completely version an agent */
+      llm?: AgentLLMIntegration;
       /** Generates the System Prompt and initial conversation context for this version. */
       context: AgentContextBuilder<TSelfContract, K, TServiceContract, TTools>;
       /** Maps the LLM's final response to the strict output contract for this version. */
