@@ -320,7 +320,6 @@ export const agentLoop = async (
             if (toolsPendingPermission.length) {
               // TODO - Create tool call request event here and add in arvotoolcalls
             }
-
             if (arvoToolCalls.length) {
               param.onStream({
                 type: 'agent.tool.request.delegation',
