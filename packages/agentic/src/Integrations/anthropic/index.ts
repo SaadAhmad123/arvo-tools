@@ -1,13 +1,10 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import {
   SemanticConventions as OpenInferenceSemanticConventions,
   OpenInferenceSpanKind,
 } from '@arizeai/openinference-semantic-conventions';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry, exceptionToSpan } from 'arvo-core';
-import type OpenAI from 'openai';
-import type { AzureOpenAI } from 'openai';
-import type { ChatCompletionTool } from 'openai/resources/index.mjs';
-import type { ChatCompletionMessageFunctionToolCall } from 'openai/resources.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { AgentMessage, AgentToolCallContent } from '../../Agent/types';
 import {
@@ -17,31 +14,32 @@ import {
   setOpenInferenceUsageOutputAttr,
   tryParseJson,
 } from '../../Agent/utils';
-import { DEFAULT_TOOL_LIMIT_PROMPT } from '../prompts';
+import { DEFAULT_TOOL_LIMIT_PROMPT, jsonPrompt } from '../prompts';
 import type { AgentLLMIntegration, AgentLLMIntegrationOutput } from '../types';
-import type { OpenAILlmIntegrationConfig } from './types';
-import { formatMessagesForOpenAI } from './utils';
+import type { AnthropicLlmIntegrationConfig } from './types';
+import { formatMessagesForAnthropic } from './utils';
 
 /**
- * Creates an Arvo-compatible LLM Adapter for OpenAI and compatible models (e.g., Azure OpenAI).
+ * Creates an Arvo-compatible LLM Adapter for Anthropic Claude models.
  *
  * This factory configures an integration that bridges the generic `Arvo` agent runner with the specific
- * OpenAI API requirements. It includes built-in features for:
+ * Anthropic API requirements. It includes built-in features for:
  *
- * - **Structured Outputs:** Automatically converts Zod schemas provided in `outputFormat` to OpenAI's `json_schema` format.
- * - **Token Optimization:** Automatically replaces large media payloads (images/files) with placeholder text in the conversational history after they have been processed once to reduce context window usage.
- * - **Observability:** Instruments calls with OpenInference-compliant OpenTelemetry attributes, including detailed input/output recording and token usage.
- * - **Safety:** Automatically injects a "tool limit reached" system instruction when the agent exhausts its configured tool budget.
+ * - **Structured Outputs:** Automatically converts Zod schemas to JSON schema format and instructs
+ *   Claude to respond with valid JSON matching the schema.
+ * - **Token Optimization:** Automatically replaces large media payloads (images/files) with placeholder
+ *   text in the conversational history after they have been processed once to reduce context window usage.
+ * - **Observability:** Instruments calls with OpenInference-compliant OpenTelemetry attributes,
+ *   including detailed input/output recording and token usage.
+ * - **Safety:** Automatically injects a "tool limit reached" system instruction when the agent
+ *   exhausts its configured tool budget.
  *
- * @param client - An initialized `OpenAI` or `AzureOpenAI` SDK client instance.
+ * @param client - An initialized `Anthropic` SDK client instance.
  * @param config - Configuration for model parameters (e.g., temperature, max tokens), cost calculations, and telemetry metadata.
  * @returns An `AgentLLMIntegration` function ready for use with `createArvoAgent`.
  */
-export const openaiLLMIntegration =
-  <TClient extends OpenAI | AzureOpenAI>(
-    client: TClient,
-    config?: OpenAILlmIntegrationConfig<TClient>,
-  ): AgentLLMIntegration =>
+export const anthropicLLMIntegration =
+  (client: Anthropic, config?: AnthropicLlmIntegrationConfig): AgentLLMIntegration =>
   async (
     { messages: _messages, system: _system, tools, outputFormat, lifecycle, toolInteractions },
     { otelInfo },
@@ -59,10 +57,10 @@ export const openaiLLMIntegration =
         },
       },
       fn: async (span): Promise<AgentLLMIntegrationOutput> => {
-        const llmChatCompletionParams: OpenAILlmIntegrationConfig<TClient>['invocationParam'] =
+        const messageCreateParams: AnthropicLlmIntegrationConfig['invocationParam'] =
           config?.invocationParam ?? {
-            model: 'gpt-4o',
-            max_completion_tokens: 4096,
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 4096,
             temperature: 0,
           };
 
@@ -100,63 +98,52 @@ export const openaiLLMIntegration =
           system = `${system}\n\n${limitMessage}`;
         }
 
+        // For JSON output format, append schema instructions to the system prompt
+        if (outputFormat.type === 'json') {
+          // biome-ignore lint/suspicious/noExplicitAny: Make the typescript compiler ignore
+          const jsonSchema = zodToJsonSchema(outputFormat.format as any);
+          const schemaInstruction = jsonPrompt(JSON.stringify(jsonSchema));
+          system = system ? `${system}${schemaInstruction}` : schemaInstruction;
+        }
+
         setOpenInferenceInputAttr(
           {
             llm: {
-              provider: config?.telemetry?.modelProvider ?? 'openai',
-              system:
-                config?.telemetry?.modelSystem ??
-                (config?.telemetry?.modelProvider === 'azure' ? 'azure_openai' : 'openai'),
-              model: llmChatCompletionParams?.model,
-              invocationParam: llmChatCompletionParams,
+              provider: 'anthropic',
+              system: 'anthropic',
+              model: messageCreateParams?.model,
+              invocationParam: messageCreateParams,
             },
             messages,
-            system,
+            system: system,
             tools,
           },
           span,
         );
 
         try {
-          const toolDef: ChatCompletionTool[] = [];
+          const toolDef: Anthropic.Tool[] = [];
           for (const tool of tools) {
             toolDef.push({
-              type: 'function',
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.inputSchema,
-              },
+              name: tool.name,
+              description: tool.description,
+              input_schema: tool.inputSchema as Anthropic.Tool.InputSchema,
             });
           }
 
-          const formattedMessages = formatMessagesForOpenAI(messages, system);
+          const formattedMessages = formatMessagesForAnthropic(messages);
 
-          const responseFormat =
-            outputFormat.type === 'json'
-              ? {
-                  type: 'json_schema' as const,
-                  json_schema: {
-                    name: 'response_schema',
-                    description: 'The required response schema',
-                    // biome-ignore lint/suspicious/noExplicitAny: Make the typescript compiler ignore. Otherwise, it emits error "Type instantiation is excessively deep and possibly infinite. ts(2589)"
-                    schema: zodToJsonSchema(outputFormat.format as any),
-                  },
-                }
-              : undefined;
-
-          const completion = await client.chat.completions.create({
-            ...llmChatCompletionParams,
+          const response = await client.messages.create({
+            ...messageCreateParams,
+            system: system ?? undefined,
             tools: toolDef.length ? toolDef : undefined,
             messages: formattedMessages,
-            response_format: responseFormat,
           });
 
-          const choice = completion.choices[0];
           const llmUsage: NonNullable<AgentLLMIntegrationOutput['usage']> = {
             tokens: {
-              prompt: completion.usage?.prompt_tokens ?? 0,
-              completion: completion.usage?.completion_tokens ?? 0,
+              prompt: response.usage.input_tokens,
+              completion: response.usage.output_tokens,
             },
           };
           const executionUnits =
@@ -165,15 +152,19 @@ export const openaiLLMIntegration =
 
           setOpenInferenceUsageOutputAttr(llmUsage, span);
 
-          if (choice?.message?.tool_calls) {
+          // Check for tool use in response
+          const toolUseBlocks = response.content.filter(
+            (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+          );
+
+          if (toolUseBlocks.length > 0) {
             const toolRequests: Omit<AgentToolCallContent, 'type'>[] = [];
-            for (const toolCall of choice.message
-              .tool_calls as ChatCompletionMessageFunctionToolCall[]) {
+            for (const toolCall of toolUseBlocks) {
               try {
                 toolRequests.push({
                   toolUseId: toolCall.id,
-                  name: toolCall.function.name,
-                  input: JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
+                  name: toolCall.name,
+                  input: toolCall.input as Record<string, unknown>,
                 });
               } catch (err) {
                 exceptionToSpan(err as Error, span);
@@ -191,15 +182,20 @@ export const openaiLLMIntegration =
             }
           }
 
-          let content = choice?.message?.content ?? '';
-          if (choice.finish_reason === 'length') {
-            content = `${content} [Max response token limit (<= ${llmChatCompletionParams.max_tokens ?? llmChatCompletionParams.max_completion_tokens}) reached]`;
+          // Extract text content from response
+          const textBlocks = response.content.filter(
+            (block): block is Anthropic.TextBlock => block.type === 'text',
+          );
+          let content = textBlocks.map((block) => block.text).join('');
+
+          // Handle stop reasons
+          if (response.stop_reason === 'max_tokens') {
+            content = `${content} [Max response token limit (<= ${messageCreateParams.max_tokens}) reached]`;
             throw new Error(`Agent reached max token limit. The partial response is "${content}"`);
           }
-          if (choice.finish_reason === 'content_filter') {
-            content = `${content} [Request blocked due to OpenAI content filtering policies]`;
-          }
+
           setOpenInferenceResponseOutputAttr({ response: content }, span);
+
           if (outputFormat.type === 'json') {
             return {
               type: 'json',

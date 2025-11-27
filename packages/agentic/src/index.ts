@@ -8,6 +8,8 @@ export {
   AgentToolCallContentSchema,
   AgentToolResultContentSchema,
 } from './Agent/schema';
+export { AgentStreamEventSchema } from './Agent/stream/schema';
+export { AgentStreamListener } from './Agent/stream/types';
 export type {
   AgentContextBuilder,
   AgentLLMContext,
@@ -33,6 +35,7 @@ export {
 } from './Agent/utils';
 export { createAgentTool } from './AgentTool';
 export type { AgentInternalTool } from './AgentTool/types';
+export { anthropicLLMIntegration } from './Integrations/anthropic';
 export { MCPClient } from './Integrations/MCPClient';
 export { openaiLLMIntegration } from './Integrations/openai';
 export { DEFAULT_TOOL_LIMIT_PROMPT } from './Integrations/prompts';

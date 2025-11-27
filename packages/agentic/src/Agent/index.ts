@@ -1,12 +1,20 @@
-import { type ArvoSemanticVersion, getOtelHeaderFromSpan } from 'arvo-core';
+import {
+  ArvoOrchestrationSubject,
+  type ArvoSemanticVersion,
+  exceptionToSpan,
+  getOtelHeaderFromSpan,
+} from 'arvo-core';
 import {
   type ArvoResumableHandler,
   type ArvoResumableState,
   createArvoResumable,
 } from 'arvo-event-handler';
+import { v4 } from 'uuid';
 import type { AgentInternalTool } from '../AgentTool/types.js';
 import type { NonEmptyArray, OtelInfoType } from '../types.js';
 import { agentLoop } from './agentLoop.js';
+import type { AgentEventStreamer } from './stream/types.js';
+import { createTimestamp } from './stream/utils.js';
 import type {
   AgentMessage,
   AgentServiceContract,
@@ -29,6 +37,10 @@ export type AgentState = {
   };
   awaitingToolCalls: Record<string, { type: string; data: Record<string, unknown> | null }>;
   totalExecutionUnits: number;
+  totalTokenUsage: {
+    prompt: number;
+    completion: number;
+  };
 };
 
 /**
@@ -117,6 +129,7 @@ export const createArvoAgent = <
   maxToolInteractions = 5,
   llmResponseType = 'text',
   tools,
+  onStream,
 }: CreateArvoAgentParam<TSelfContract, TServiceContract, TTools>) => {
   const serviceContracts = Object.fromEntries(
     Object.entries(contracts.services).map(([key, { contract }]) => [key, contract]),
@@ -146,6 +159,31 @@ export const createArvoAgent = <
             span,
             headers: getOtelHeaderFromSpan(span),
           };
+
+          const agentEventStreamer: AgentEventStreamer = (event) => {
+            try {
+              const currentSubject = context?.currentSubject ?? input?.subject ?? null;
+              const parsedSubject = currentSubject
+                ? ArvoOrchestrationSubject.parse(currentSubject)
+                : null;
+              onStream?.(
+                {
+                  ...event,
+                  id: v4(),
+                  time: createTimestamp(),
+                },
+                {
+                  initiatorId: parsedSubject?.execution.initiator ?? 'unknown',
+                  subject: currentSubject ?? 'unknown',
+                  selfId: contracts.self.type,
+                  selfVersion: ver,
+                },
+              );
+            } catch (e) {
+              exceptionToSpan(e as Error, span);
+            }
+          };
+
           try {
             const contextBuilder = handler[ver as ArvoSemanticVersion]?.context;
             const outputBuilder = handler[ver as ArvoSemanticVersion]?.output;
@@ -176,6 +214,7 @@ export const createArvoAgent = <
                   input,
                   tools: { services: serviceTools, mcp: mcpTools, tools: internalTools },
                   span,
+                  selfContract: selfVersionedContract,
                 })) ?? null;
               const response = await agentLoop(
                 {
@@ -199,6 +238,11 @@ export const createArvoAgent = <
                   mcp: mcp ?? null,
                   toolInteraction,
                   currentTotalExecutionUnits: 0,
+                  onStream: agentEventStreamer,
+                  currentTotalUsageTokens: {
+                    prompt: 0,
+                    completion: 0,
+                  },
                 },
                 { otelInfo },
               );
@@ -215,6 +259,7 @@ export const createArvoAgent = <
                   ]),
                 ),
                 totalExecutionUnits: response.executionUnits,
+                totalTokenUsage: response.tokenUsage,
               };
 
               if (response.toolCalls) {
@@ -286,6 +331,8 @@ export const createArvoAgent = <
                 mcp: mcp ?? null,
                 toolInteraction,
                 currentTotalExecutionUnits: resumedContext.totalExecutionUnits,
+                onStream: agentEventStreamer,
+                currentTotalUsageTokens: resumedContext.totalTokenUsage,
               },
               { otelInfo },
             );
@@ -301,6 +348,7 @@ export const createArvoAgent = <
                 ]),
               ),
               totalExecutionUnits: response.executionUnits,
+              totalTokenUsage: response.tokenUsage,
             };
 
             if (response.toolCalls) {
