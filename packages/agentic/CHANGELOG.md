@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.1.0
+
+### Minor Changes
+
+- 8e4af08: Added Anthropic and Azure Integration - Also added event streaming in agents
+
 ## 1.0.1
 
 ### Patch Changes
