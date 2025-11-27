@@ -42,10 +42,12 @@ const tests: ArvoTestSuite = {
                   'What is x in 2x+5=67. Also in parallel can you help me get start on Astro',
                 parentSubject$$: null,
               },
+              accesscontrol: 'xyz',
             }),
           expectedEvents: (events) => {
             expect(events).toHaveLength(1);
             expect(events[0]?.type).toBe(humanReviewContract.version('1.0.0').accepts.type);
+            expect(events[0]?.accesscontrol).toBe('xyz');
             return true;
           },
         },
