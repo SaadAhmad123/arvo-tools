@@ -12,6 +12,7 @@ import type z from 'zod';
 import type { AgentInternalTool } from '../AgentTool/types.js';
 import type { AgentLLMIntegration, AgentLLMIntegrationParam } from '../Integrations/types.js';
 import type { IMCPClient } from '../interfaces.mcp.js';
+import type { IPermissionManager } from '../interfaces.permission.manager.js';
 import type { OtelInfoType } from '../types.js';
 import type { AgentEventStreamer } from './stream/types.js';
 import type {
@@ -64,6 +65,8 @@ export const agentLoop = async (
       completion: number;
     };
     onStream: AgentEventStreamer;
+    permissionPolicy: string[];
+    permissionManager: IPermissionManager | null;
   },
   config: { otelInfo: OtelInfoType },
 ) =>
@@ -150,7 +153,28 @@ export const agentLoop = async (
             const arvoToolCalls: AgentToolCallContent[] = [];
             const mcpToolResultPromises: Promise<AgentToolResultContent>[] = [];
             const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
-            for (const item of prioritizeToolCalls(response.toolRequests, nameToToolMap)) {
+            const prioritizedToolCalls = prioritizeToolCalls(response.toolRequests, nameToToolMap);
+            // TODO - Add permission manager from here
+            const toolPermissionMap: Record<string, boolean> =
+              (await param.permissionManager?.get(
+                {
+                  subject: '',
+                  accesscontrol: '',
+                  name: '',
+                },
+                prioritizedToolCalls
+                  .filter((item) => param.permissionPolicy.includes(item.name))
+                  .map((item) => item.name),
+              )) ?? {};
+            const toolsPendingPermission: string[] = [];
+
+            for (const item of prioritizedToolCalls) {
+              // Drop tool call due to lack of permission
+              if (toolPermissionMap[item.name] === false) {
+                toolsPendingPermission.push(item.name);
+                continue;
+              }
+
               param.onStream({
                 type: 'agent.tool.request',
                 data: {
@@ -293,6 +317,10 @@ export const agentLoop = async (
             for (const item of await Promise.all(internalToolResultPromises)) {
               messages.push({ role: 'user', content: item, seenCount: 0 });
             }
+            if (toolsPendingPermission.length) {
+              // TODO - Create tool call request event here and add in arvotoolcalls
+            }
+
             if (arvoToolCalls.length) {
               param.onStream({
                 type: 'agent.tool.request.delegation',

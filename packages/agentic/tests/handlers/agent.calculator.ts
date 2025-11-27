@@ -1,5 +1,5 @@
 import { cleanString, createArvoOrchestratorContract } from 'arvo-core';
-import type { EventHandlerFactory, IMachineMemory } from 'arvo-event-handler';
+import { ArvoDomain, type EventHandlerFactory, type IMachineMemory } from 'arvo-event-handler';
 import * as dotenv from 'dotenv';
 import { OpenAI } from 'openai';
 import z from 'zod';
@@ -57,7 +57,7 @@ export const calculatorAgent: EventHandlerFactory<{
         },
         humanReview: {
           contract: humanReviewContract.version('1.0.0'),
-          domains: ['human.interaction'],
+          domains: [ArvoDomain.FROM_EVENT_CONTRACT],
         },
       },
     },

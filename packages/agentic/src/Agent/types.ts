@@ -16,6 +16,7 @@ import type {
   AgentLLMIntegrationParam,
 } from '../Integrations/types';
 import type { IMCPClient } from '../interfaces.mcp';
+import type { IPermissionManager } from '../interfaces.permission.manager';
 import type { NonEmptyArray, PromiseAble } from '../types';
 import type {
   AgentMediaContentSchema,
@@ -354,6 +355,9 @@ export type CreateArvoAgentParam<
   /** A agent stream listener hook */
   onStream?: AgentStreamListener;
 
+  /** The permission manager instance */
+  permissionManager?: IPermissionManager;
+
   /**
    * Arvo enforces strict version compliance. You must provide specific logic
    * (System Prompt Building & Output Mapping) for **every semantic version**
@@ -364,6 +368,9 @@ export type CreateArvoAgentParam<
    */
   handler: {
     [K in keyof TSelfContract['versions'] & ArvoSemanticVersion]: {
+      permissionPolicy?: (
+        tools: AgentLLMContext<TServiceContract, TTools>['tools'],
+      ) => PromiseAble<string[]>;
       /**
        * An optional override to forces the Agent to generate a specific output structure.
        * - `'text'`: Standard conversational response.

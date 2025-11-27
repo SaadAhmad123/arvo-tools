@@ -1,6 +1,7 @@
 import {
   ArvoOrchestrationSubject,
   type ArvoSemanticVersion,
+  cleanString,
   exceptionToSpan,
   getOtelHeaderFromSpan,
 } from 'arvo-core';
@@ -28,6 +29,7 @@ import {
 } from './utils.js';
 
 export type AgentState = {
+  initEventAccessControl: string | null;
   currentSubject: string;
   system: string | null;
   messages: AgentMessage[];
@@ -130,6 +132,7 @@ export const createArvoAgent = <
   llmResponseType = 'text',
   tools,
   onStream,
+  permissionManager,
 }: CreateArvoAgentParam<TSelfContract, TServiceContract, TTools>) => {
   const serviceContracts = Object.fromEntries(
     Object.entries(contracts.services).map(([key, { contract }]) => [key, contract]),
@@ -144,7 +147,10 @@ export const createArvoAgent = <
   return createArvoResumable({
     contracts: {
       self: contracts.self,
-      services: serviceContracts,
+      services: {
+        ...serviceContracts,
+        ...(permissionManager ? { [v4()]: permissionManager.contract } : {}),
+      },
     },
     memory,
     types: {
@@ -200,6 +206,13 @@ export const createArvoAgent = <
             const mcpTools = await generateMcpToolDefinitions(mcp ?? null, { otelInfo });
             const internalTools = generateAgentInternalToolDefinitions<TTools>(tools ?? {});
 
+            const permissionPolicy: string[] =
+              (await handler[ver as ArvoSemanticVersion]?.permissionPolicy?.({
+                services: serviceTools,
+                mcp: mcpTools,
+                tools: internalTools,
+              })) ?? [];
+
             const toolInteraction = context?.toolInteractions ?? {
               max: maxToolInteractions,
               current: 0,
@@ -243,11 +256,14 @@ export const createArvoAgent = <
                     prompt: 0,
                     completion: 0,
                   },
+                  permissionManager: permissionManager ?? null,
+                  permissionPolicy,
                 },
                 { otelInfo },
               );
 
               const resumableContextToPersist: AgentState = {
+                initEventAccessControl: input.accesscontrol ?? null,
                 currentSubject: input.subject,
                 system: llmContext?.system ?? null,
                 messages: response.messages,
@@ -296,6 +312,27 @@ export const createArvoAgent = <
             if (service?.parentid && resumedContext.awaitingToolCalls[service.parentid]) {
               // biome-ignore lint/style/noNonNullAssertion: It cannot be null. The if clause does already
               resumedContext.awaitingToolCalls[service.parentid]!.data = service.data;
+
+              if (service.type === permissionManager?.contract?.emitList?.[0]?.type) {
+                await permissionManager?.set(
+                  {
+                    subject: context.currentSubject,
+                    accesscontrol: context.initEventAccessControl,
+                    name: contracts.self.type,
+                  },
+                  // biome-ignore lint/suspicious/noExplicitAny: Type casting here is weird
+                  service as any,
+                );
+              }
+
+              if (service.type === permissionManager?.contract?.systemError?.type) {
+                throw new Error(
+                  cleanString(`
+                    [Critical] The agent's attempt to request permission via ${permissionManager?.contract?.accepts?.type}
+                    failed with error: ${JSON.stringify(service.data)}
+                  `),
+                );
+              }
             }
 
             if (
@@ -306,7 +343,12 @@ export const createArvoAgent = <
 
             const messages = [...resumedContext.messages];
 
-            for (const [toolUseId, { data }] of Object.entries(resumedContext.awaitingToolCalls)) {
+            for (const [toolUseId, { type, data }] of Object.entries(
+              resumedContext.awaitingToolCalls,
+            )) {
+              if (type === permissionManager?.contract?.emitList?.[0]?.type) {
+                continue;
+              }
               messages.push({
                 role: 'user',
                 content: {
@@ -333,6 +375,8 @@ export const createArvoAgent = <
                 currentTotalExecutionUnits: resumedContext.totalExecutionUnits,
                 onStream: agentEventStreamer,
                 currentTotalUsageTokens: resumedContext.totalTokenUsage,
+                permissionManager: permissionManager ?? null,
+                permissionPolicy,
               },
               { otelInfo },
             );
