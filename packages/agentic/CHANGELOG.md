@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.1.1
+
+### Patch Changes
+
+- d4de901: Removed azure openai dependency
+
 ## 1.1.0
 
 ### Minor Changes
