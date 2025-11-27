@@ -15,27 +15,37 @@ sequenceDiagram
         Otel-->>Integration: span
         
         Integration->>Integration: Configure LLM parameters
-        Note over Integration: model = config.model ?? 'gpt-4o'<br/>temperature = config.temperature ?? 0<br/>maxTokens = config.maxTokens ?? 4096
+        Note over Integration: model = config.model ?? 'gpt-4o'<br/>temperature = config.temperature ?? 0
     end
     
     rect rgb(240, 220, 200)
-        Note over Integration,Formatter: Context Optimization Phase (Token Savings)
+        Note over Integration,Formatter: Context Processing Phase
         
-        loop For each message in messages
-            alt message.content.type === 'media' AND message.seenCount > 0
-                Integration->>Integration: Mask media content
-                Note over Integration: Replace with:<br/>{<br/>  type: 'text',<br/>  content: "Media file (type: ${type}@${format})<br/>           already parsed and looked at.<br/>           No need to look at it again"<br/>}
-                Note over Integration: **Smart Token Optimization:**<br/>Tracks individual message views<br/>across ReAct loop iterations.<br/>First view = full media sent,<br/>Subsequent views = text placeholder
-            else message is not masked
-                Integration->>Integration: Keep original message content
+        alt config.contextTransformer is defined
+             Integration->>Integration: await config.contextTransformer({ messages, system })
+        else Default Context Processing (Media Masking)
+            loop For each message in messages
+                alt message.content.type === 'media' AND message.seenCount > 0
+                    Integration->>Integration: Mask media content to Text
+                    Note over Integration: **Token Optimization:**<br/>Replaces parsed media with<br/>placeholder text to save context.
+                else
+                    Integration->>Integration: Keep original message
+                end
             end
         end
         
         alt toolInteractions.exhausted === true
             Integration->>Integration: Inject tool limit prompt
-            Note over Integration: messages.push({<br/>  role: 'user',<br/>  content: config.toolLimitPrompt ?? DEFAULT,<br/>  seenCount: 0<br/>})<br/><br/>system += toolLimitPrompt
-            Note over Integration: **Safety Mechanism:**<br/>Instructs LLM to stop calling tools<br/>and provide final answer
+            Note over Integration: 1. messages.push(UserMessage(limitPrompt))<br/>2. system += limitPrompt
+            Note over Integration: **Safety Mechanism:**<br/>Forces LLM to stop looping<br/>and provide a final answer.
         end
+    end
+    
+    rect rgb(240, 240, 200)
+        Note over Integration,Otel: Input Telemetry Recording
+        
+        Integration->>Otel: setOpenInferenceInputAttr({ llm, messages, system, tools })
+        Note over Otel: Records standard<br/>OpenInference attributes<br/>(input_messages, tool_definitions)
     end
     
     rect rgb(220, 240, 220)
@@ -43,126 +53,74 @@ sequenceDiagram
         
         Integration->>Formatter: formatMessagesForOpenAI(messages, system)
         
-        Formatter->>Formatter: Build tool response map
-        loop For each message where content.type === 'tool_result'
-            Formatter->>Formatter: toolResponseMap[toolUseId] = content
-        end
-        
-        alt system prompt exists
-            Formatter->>Formatter: formattedMessages.push({ role: 'system', content: system })
-        end
+        Formatter->>Formatter: 1. Create System Message
+        Formatter->>Formatter: 2. Index Tool Results (create map)
         
         loop For each message in messages
-            alt message.role === 'user' AND content.type === 'text'
-                Formatter->>Formatter: Push { role: 'user', content: text }
-            else message.role === 'user' AND content.type === 'media' (image)
+            alt User Message (Text)
+                Formatter->>Formatter: Push { role: 'user', content: string }
+            else User Message (Media - Image)
                 Formatter->>Formatter: Push { role: 'user', content: [{ type: 'image_url', ... }] }
-                Note over Formatter: Only sent if seenCount === 0<br/>(otherwise already masked to text)
-            else message.role === 'user' AND content.type === 'media' (file)
+            else User Message (Media - File)
                 Formatter->>Formatter: Push { role: 'user', content: [{ type: 'file', ... }] }
-                Note over Formatter: Only sent if seenCount === 0<br/>(otherwise already masked to text)
-            else message.role === 'assistant' AND content.type === 'text'
-                Formatter->>Formatter: Push { role: 'assistant', content: text }
-            else message.role === 'assistant' AND content.type === 'tool_use'
+            else Assistant Message (Tool Use)
                 Formatter->>Formatter: Push { role: 'assistant', tool_calls: [...] }
-                Formatter->>Formatter: Lookup result in toolResponseMap[toolUseId]
-                Formatter->>Formatter: Push { role: 'tool', tool_call_id, content: result }
-                Note over Formatter: **OpenAI Requirement:**<br/>Tool calls must be immediately<br/>followed by tool results
+                Formatter->>Formatter: **IMMEDIATELY** Push { role: 'tool', tool_call_id, content... }
+                Note over Formatter: **CRITICAL:** Reconstructs conversation<br/>to ensure Tool Results immediately<br/>follow their Tool Calls.
             end
         end
         
         Formatter-->>Integration: ChatCompletionMessageParam[]
     end
-    
-    rect rgb(240, 240, 200)
-        Note over Integration,Otel: Input Telemetry Recording
-        
-        Integration->>Otel: setOpenInferenceInputAttr({ llm, messages, system, tools })
-        
-        loop For each tool in tools
-            Otel->>Otel: setAttribute('llm.tools.{idx}.tool.json_schema', ...)
-        end
-        
-        loop For each message in messages
-            Otel->>Otel: setAttribute('llm.input_messages.{idx}.message.*', ...)
-        end
-    end
-    
+
     rect rgb(200, 240, 240)
-        Note over Integration,OpenAI: Tool Definition Conversion
+        Note over Integration,OpenAI: API Prep & Invocation
         
         loop For each tool in tools
-            Integration->>Integration: Convert to OpenAI ChatCompletionTool format
-            Note over Integration: {<br/>  type: 'function',<br/>  function: {<br/>    name: tool.name,<br/>    description: tool.description,<br/>    parameters: tool.inputSchema<br/>  }<br/>}
+            Integration->>Integration: Map to ChatCompletionTool (JSON Schema)
         end
-    end
-    
-    rect rgb(240, 200, 240)
-        Note over Integration,OpenAI: Structured Output Configuration
-        
+
         alt outputFormat.type === 'json'
-            Integration->>Integration: Build response_format constraint
-            Note over Integration: {<br/>  type: 'json_schema',<br/>  json_schema: {<br/>    name: 'response_schema',<br/>    schema: zodToJsonSchema(format)<br/>  }<br/>}
-            Note over Integration: **Structured Outputs:**<br/>Forces OpenAI to return valid JSON<br/>matching the Zod schema
-        else outputFormat.type === 'text'
-            Integration->>Integration: response_format = undefined
+            Integration->>Integration: Configure Structured Outputs
+            Note over Integration: response_format = {<br/>  type: 'json_schema',<br/>  json_schema: { schema: zodToJsonSchema(...) }<br/>}
         end
-    end
-    
-    rect rgb(220, 220, 240)
-        Note over Integration,OpenAI: API Invocation Phase
         
-        Integration->>OpenAI: chat.completions.create({ model, messages, tools, response_format })
-        Note over OpenAI: Request payload:<br/>- Formatted message history<br/>  (with masked media if seenCount > 0)<br/>- Tool definitions (if any)<br/>- JSON schema (if structured output)<br/>- Temperature, max tokens
-        
-        OpenAI-->>Integration: ChatCompletion response
-        
-        Integration->>Integration: Extract usage metrics
-        Note over Integration: tokens.prompt = completion.usage.prompt_tokens<br/>tokens.completion = completion.usage.completion_tokens<br/>executionUnits = config.executionunits?.(prompt, completion)
-        
-        Integration->>Otel: setOpenInferenceUsageOutputAttr({ tokens })
-        Otel->>Otel: setAttribute('llm.token_count.prompt', ...)
-        Otel->>Otel: setAttribute('llm.token_count.completion', ...)
-        Otel->>Otel: setAttribute('llm.token_count.total', ...)
+        Integration->>OpenAI: chat.completions.create({...})
+        OpenAI-->>Integration: ChatCompletion Response
     end
     
     rect rgb(200, 240, 200)
-        Note over Integration,Parser: Response Type Detection & Processing
+        Note over Integration,Parser: Response Processing & Telemetry
         
-        Integration->>Parser: Parse completion.choices[0]
+        Integration->>Integration: Calculate Usage
+        Note over Integration: ExecutionUnits =<br/>config.executionunits(prompt, completion)
         
-        alt Response contains tool_calls
-            loop For each tool_call in message.tool_calls
-                Parser->>Parser: Parse JSON arguments
-                Parser->>Parser: toolRequests.push({ toolUseId: id, name, input })
+        Integration->>Otel: setOpenInferenceUsageOutputAttr(usage)
+        
+        alt Response has tool_calls
+            loop For each tool_call
+                Parser->>Parser: Parse arguments (JSON.parse)
             end
-            
             Parser->>Otel: setOpenInferenceToolCallOutputAttr({ toolCalls })
+            Parser-->>Integration: Return { type: 'tool_call', ... }
             
-            Parser-->>Integration: { type: 'tool_call', toolRequests, usage, executionUnits }
-            
-        else Response is text/json content
-            Parser->>Parser: Extract message.content
-            
-            alt finish_reason === 'length'
-                Parser->>Parser: Append "[Max token limit reached]" to content
-            else finish_reason === 'content_filter'
-                Parser->>Parser: Append "[Content filter blocked]" to content
+        else Response is Content
+            Parser->>Parser: Check finish_reason
+            alt length or content_filter
+                Parser->>Parser: Append warning to content string
             end
             
-            Parser->>Otel: setOpenInferenceResponseOutputAttr({ response: content })
+            Parser->>Otel: setOpenInferenceResponseOutputAttr({ response })
             
             alt outputFormat.type === 'json'
                 Parser->>Parser: tryParseJson(content)
-                Parser-->>Integration: { type: 'json', content, parsedContent, usage, executionUnits }
+                Parser-->>Integration: Return { type: 'json', ... }
             else outputFormat.type === 'text'
-                Parser-->>Integration: { type: 'text', content, usage, executionUnits }
+                Parser-->>Integration: Return { type: 'text', ... }
             end
         end
     end
     
     Integration->>Otel: span.end()
     Integration-->>Agent: AgentLLMIntegrationOutput
-
-    Note over Agent,Parser: **Error Handling:**<br/>Any exception sets span.status = ERROR<br/>and re-throws to Agent Core Loop
 ```

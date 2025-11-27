@@ -11,21 +11,39 @@ import type {
   AnyArvoOrchestratorContract,
 } from './types.js';
 
+export const dataUrlString = (allowedMimeTypes: string[]) =>
+  z.string().refine(
+    (val) => {
+      const match = val.match(/^data:([^;]+);base64,/);
+      if (!match) return false;
+      if (allowedMimeTypes && !allowedMimeTypes.includes(match[1])) return false;
+      return true;
+    },
+    {
+      message: allowedMimeTypes
+        ? `Must be a valid data URL with one of these MIME types: ${allowedMimeTypes.join(', ')}`
+        : 'Must be a valid data URL (e.g., data:<mime-type>;base64,...)',
+    },
+  );
+
 export const AgentDefaults = {
   INIT_SCHEMA: z.object({
     message: z.string().describe('The input message to the agent'),
-    imageBase64: z
-      .string()
+  }),
+  INIT_MULTIMODAL_SCHEMA: z.object({
+    message: z.string().describe('The input message to the agent'),
+    imageBase64: dataUrlString(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
       .array()
       .optional()
       .describe(
-        'An optional list of base64 image strings to read. Must not be added by an AI Agent',
+        'An optional list of base64 image strings to read. An AI Agent must not send data via this field',
       ),
-    pdfBase64: z
-      .string()
+    pdfBase64: dataUrlString(['application/pdf'])
       .array()
       .optional()
-      .describe('An optional list of base64 pngs to read. Must not be added by an AI Agent'),
+      .describe(
+        'An optional list of base64 pdfs to read. An AI Agent must not send data via this field',
+      ),
   }),
   COMPLETE_SCHEMA: z.object({
     response: z.string().describe('The output response of the agent'),
@@ -60,8 +78,8 @@ export const AgentDefaults = {
             contentType: {
               format: 'base64',
               type: 'file',
-              filename: `${v4()}.pdf`,
-              filetype: 'pdf',
+              name: `${v4()}.pdf`,
+              mediatype: 'application/pdf',
             },
           },
         });
@@ -77,8 +95,8 @@ export const AgentDefaults = {
             contentType: {
               format: 'base64',
               type: 'image',
-              filename: `${v4()}.png`,
-              filetype: 'png',
+              name: `${v4()}.png`,
+              mediatype: 'image/png',
             },
           },
         });

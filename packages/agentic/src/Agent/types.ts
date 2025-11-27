@@ -25,6 +25,7 @@ import type {
   AgentToolCallContentSchema,
   AgentToolResultContentSchema,
 } from './schema';
+import type { AgentStreamListener } from './stream/types';
 
 /** Represents a pure text block in the conversation history. */
 export type AgentTextContent = z.infer<typeof AgentTextContentSchema>;
@@ -234,6 +235,8 @@ export type AgentContextBuilder<
   lifecycle: AgentLLMIntegrationParam['lifecycle'];
   /** The fully typed input event data for this specific contract version. */
   input: InferVersionedArvoContract<VersionedArvoContract<T, V>>['accepts'];
+  /** The agent's self contract reference */
+  selfContract: VersionedArvoContract<T, V>;
   /** Catalog of available tools for dynamic prompt injection. */
   tools: AgentLLMContext<TServiceContract, TTools>['tools'];
   /** The Otel span to add logs to */
@@ -347,6 +350,9 @@ export type CreateArvoAgentParam<
    * (e.g., `openaiLLMIntegration`, `anthropicLLMIntegration`).
    */
   llm: AgentLLMIntegration;
+
+  /** A agent stream listener hook */
+  onStream?: AgentStreamListener;
 
   /**
    * Arvo enforces strict version compliance. You must provide specific logic

@@ -13,6 +13,7 @@ import type { AgentInternalTool } from '../AgentTool/types.js';
 import type { AgentLLMIntegration, AgentLLMIntegrationParam } from '../Integrations/types.js';
 import type { IMCPClient } from '../interfaces.mcp.js';
 import type { OtelInfoType } from '../types.js';
+import type { AgentEventStreamer } from './stream/types.js';
 import type {
   AgentMessage,
   AgentOutputBuilder,
@@ -58,6 +59,11 @@ export const agentLoop = async (
       max: number;
     };
     currentTotalExecutionUnits: number;
+    currentTotalUsageTokens: {
+      prompt: number;
+      completion: number;
+    };
+    onStream: AgentEventStreamer;
   },
   config: { otelInfo: OtelInfoType },
 ) =>
@@ -83,11 +89,33 @@ export const agentLoop = async (
       );
       let lifecycle: typeof param.initLifecycle = param.initLifecycle;
       let executionUnits = param.currentTotalExecutionUnits;
+      const tokenUsage = param.currentTotalUsageTokens;
       try {
         let currentToolInteractionCount = param.toolInteraction.current;
         const messages = [...param.messages];
         while (currentToolInteractionCount <= param.toolInteraction.max) {
           const toolQuotaExhausted = !(currentToolInteractionCount < param.toolInteraction.max);
+
+          param.onStream({
+            type:
+              lifecycle === 'init'
+                ? 'agent.init'
+                : lifecycle === 'tool_result'
+                  ? 'agent.resume'
+                  : 'agent.self.correction',
+            data: {
+              system: param.system,
+              messages: messages,
+              tools: param.tools.map((item) => item.name),
+              llmResponseType: param.llmResponseType,
+              toolIteractionCycle: {
+                max: param.toolInteraction.max,
+                current: param.toolInteraction.current,
+                exhausted: toolQuotaExhausted,
+              },
+            },
+          });
+
           const response = await param.llm(
             {
               lifecycle,
@@ -103,11 +131,14 @@ export const agentLoop = async (
                 type: param.llmResponseType,
                 format: param.outputFormat,
               },
+              onStream: param.onStream,
             },
             { otelInfo },
           );
           currentToolInteractionCount++;
           executionUnits += response.executionUnits;
+          tokenUsage.completion += response.usage.tokens.completion;
+          tokenUsage.prompt += response.usage.tokens.prompt;
 
           // Update the message seen count by one for all the
           // messages which the LLM has seen
@@ -120,6 +151,18 @@ export const agentLoop = async (
             const mcpToolResultPromises: Promise<AgentToolResultContent>[] = [];
             const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
             for (const item of prioritizeToolCalls(response.toolRequests, nameToToolMap)) {
+              param.onStream({
+                type: 'agent.tool.request',
+                data: {
+                  tool: {
+                    name: item.name,
+                    kind: nameToToolMap[item.name]?.serverConfig?.kind ?? 'unknown',
+                    originalName: nameToToolMap[item.name]?.serverConfig?.name ?? 'unknown',
+                  },
+                  usage: tokenUsage,
+                  executionunits: executionUnits,
+                },
+              });
               const toolCallContent: AgentToolCallContent = {
                 type: 'tool_use',
                 toolUseId: item.toolUseId,
@@ -251,6 +294,15 @@ export const agentLoop = async (
               messages.push({ role: 'user', content: item, seenCount: 0 });
             }
             if (arvoToolCalls.length) {
+              param.onStream({
+                type: 'agent.tool.request.delegation',
+                data: {
+                  tools: arvoToolCalls.map((item) => item.name),
+                  executionunits: executionUnits,
+                  usage: tokenUsage,
+                },
+              });
+
               return {
                 messages,
                 toolCalls: arvoToolCalls,
@@ -259,11 +311,21 @@ export const agentLoop = async (
                   max: param.toolInteraction.max,
                 },
                 executionUnits,
+                tokenUsage,
               };
             }
             lifecycle = 'tool_result';
             continue;
           }
+
+          param.onStream({
+            type: 'agent.output.finalization',
+            data: {
+              content: response.content,
+              usage: tokenUsage,
+              executionunits: executionUnits,
+            },
+          });
 
           const outputResult = await param.outputBuilder({
             ...response,
@@ -308,6 +370,15 @@ export const agentLoop = async (
               seenCount: 1,
             });
 
+            param.onStream({
+              type: 'agent.output',
+              data: {
+                content: JSON.stringify(outputResult.data),
+                usage: tokenUsage,
+                executionunits: executionUnits,
+              },
+            });
+
             return {
               messages,
               output: outputResult.data,
@@ -316,6 +387,7 @@ export const agentLoop = async (
                 max: param.toolInteraction.max,
               },
               executionUnits,
+              tokenUsage,
             };
           }
         }

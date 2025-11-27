@@ -1,11 +1,12 @@
 import type z from 'zod';
+import type { AgentEventStreamer } from '../Agent/stream/types';
 import type {
   AgentLLMContext,
   AgentMessage,
   AgentToolCallContent,
   AgentToolDefinition,
 } from '../Agent/types';
-import type { OtelInfoType } from '../types';
+import type { OtelInfoType, PromiseAble } from '../types';
 
 /**
  * The standardized input payload passed to a Custom LLM Integration function.
@@ -54,6 +55,11 @@ export type AgentLLMIntegrationParam = {
         type: 'json';
         format: z.ZodTypeAny;
       };
+
+  /**
+   * A function to log streaming events from the llm
+   */
+  onStream: AgentEventStreamer;
 };
 
 /**
@@ -118,3 +124,38 @@ export type AgentLLMIntegration = (
   param: AgentLLMIntegrationParam,
   config: { otelInfo: OtelInfoType },
 ) => Promise<AgentLLMIntegrationOutput>;
+
+export type CommonIntegrationConfig = {
+  /**
+   * A calculator function to determine the abstract "Execution Units" (cost) of the LLM call.
+   *
+   * This allows mapping raw token usage to a unified cost metric used by the `Arvo` event system.
+   * For example, $Cost = (PromptTokens \times Price_{in}) + (CompletionTokens \times Price_{out})$.
+   *
+   * @param prompt - The number of input tokens used.
+   * @param completion - The number of output tokens generated.
+   * @returns The calculated execution units (e.g., cost in cents or arbitrary units).
+   */
+  executionunits?: (prompt: number, completion: number) => number;
+
+  /**
+   * A custom system instruction injected when the agent exceeds its `maxToolInteractions` limit.
+   *
+   * Use this to guide the model to either summarize its current progress, give up gracefully, or
+   * attempt a final answer without further tool usage.
+   */
+  toolLimitPrompt?: (toolInteractions: AgentLLMIntegrationParam['toolInteractions']) => string;
+
+  /**
+   * An optional interceptor to transform messages or system instructions immediately before the LLM call.
+   *
+   * This is useful for last-mile modifications, such as filtering sensitive data or appending dynamic
+   * context, without permanently altering the Agent's state history.
+   *
+   * @returns A promise resolving to the modified `messages` array and `system` prompt string.
+   */
+  contextTransformer?: (param: { messages: AgentMessage[]; system: string | null }) => PromiseAble<{
+    messages: AgentMessage[];
+    system: string | null;
+  }>;
+};

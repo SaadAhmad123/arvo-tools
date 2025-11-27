@@ -21,11 +21,11 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
   description: 'This is a calculator agent and an agent which can talk to Astro documentation',
   versions: {
     '1.0.0': {
-      init: AgentDefaults.INIT_SCHEMA,
+      init: AgentDefaults.INIT_MULTIMODAL_SCHEMA,
       complete: AgentDefaults.COMPLETE_SCHEMA,
     },
     '2.0.0': {
-      init: AgentDefaults.INIT_SCHEMA,
+      init: AgentDefaults.INIT_MULTIMODAL_SCHEMA,
       complete: z.object({
         calculatorOutput: z
           .string()
@@ -37,6 +37,9 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
           .describe('The Astro documentation operation output if there is any'),
       }),
     },
+  },
+  metadata: {
+    alias: 'saad',
   },
 });
 
@@ -102,7 +105,9 @@ export const calculatorAgent: EventHandlerFactory<{
       '2.0.0': {
         llmResponseType: 'json',
         llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
-          model: 'gpt-4o-mini',
+          invocationParam: {
+            model: 'gpt-4o-mini',
+          },
         }),
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
