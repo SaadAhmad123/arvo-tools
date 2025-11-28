@@ -5,14 +5,20 @@ import {
 import {
   ArvoOpenTelemetry,
   type ArvoSemanticVersion,
+  cleanString,
   getOtelHeaderFromSpan,
+  logToSpan,
   type VersionedArvoContract,
 } from 'arvo-core';
+import { v4 } from 'uuid';
 import type z from 'zod';
 import type { AgentInternalTool } from '../AgentTool/types.js';
 import type { AgentLLMIntegration, AgentLLMIntegrationParam } from '../Integrations/types.js';
 import type { IMCPClient } from '../interfaces.mcp.js';
-import type { IPermissionManager } from '../interfaces.permission.manager.js';
+import type {
+  IPermissionManager,
+  PermissionManagerContext,
+} from '../interfaces.permission.manager.js';
 import type { OtelInfoType } from '../types.js';
 import type { AgentEventStreamer } from './stream/types.js';
 import type {
@@ -67,6 +73,7 @@ export const agentLoop = async (
     onStream: AgentEventStreamer;
     permissionPolicy: string[];
     permissionManager: IPermissionManager | null;
+    permissionManagerContext: PermissionManagerContext;
   },
   config: { otelInfo: OtelInfoType },
 ) =>
@@ -154,27 +161,20 @@ export const agentLoop = async (
             const mcpToolResultPromises: Promise<AgentToolResultContent>[] = [];
             const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
             const prioritizedToolCalls = prioritizeToolCalls(response.toolRequests, nameToToolMap);
-            // TODO - Add permission manager from here
+
             const toolPermissionMap: Record<string, boolean> =
               (await param.permissionManager?.get(
-                {
-                  subject: '',
-                  accesscontrol: '',
-                  name: '',
-                },
+                param.permissionManagerContext,
                 prioritizedToolCalls
                   .filter((item) => param.permissionPolicy.includes(item.name))
-                  .map((item) => item.name),
+                  .map((item) => nameToToolMap[item.name])
+                  .filter(Boolean),
+                { otelInfo },
               )) ?? {};
-            const toolsPendingPermission: string[] = [];
 
+            // biome-ignore lint/suspicious/noExplicitAny: This needs to be general
+            const toolsPendingPermission: AgentToolDefinition<any>[] = [];
             for (const item of prioritizedToolCalls) {
-              // Drop tool call due to lack of permission
-              if (toolPermissionMap[item.name] === false) {
-                toolsPendingPermission.push(item.name);
-                continue;
-              }
-
               param.onStream({
                 type: 'agent.tool.request',
                 data: {
@@ -187,12 +187,14 @@ export const agentLoop = async (
                   executionunits: executionUnits,
                 },
               });
+
               const toolCallContent: AgentToolCallContent = {
                 type: 'tool_use',
                 toolUseId: item.toolUseId,
                 name: item.name,
                 input: item.input,
               };
+
               messages.push({
                 role: 'assistant',
                 content: toolCallContent,
@@ -216,6 +218,59 @@ export const agentLoop = async (
                     content: `The tool ${item.name} does not exist. Please check if you are using the correct tool and don't call this tool again till you have confirmed the existance of the correct tool`,
                   },
                   seenCount: 0,
+                });
+                continue;
+              }
+
+              // Block tool call with no permission and build permission request
+              if (toolPermissionMap[item.name] === false) {
+                toolsPendingPermission.push(resolvedToolDef);
+                messages.push({
+                  role: 'user',
+                  content: {
+                    type: 'tool_result',
+                    toolUseId: item.toolUseId,
+                    content: cleanString(`
+                      [Critical] The tool "${item.name}" call was blocked this time as it required external permissions. 
+                      The permission request has been lodged and responded to. Please try again.
+                      You can request any tool call, the system is here to facilitate with the permission 
+                      acquiry. You as an AI Agent don't have to concern yourself with tool permission details.
+                    `),
+                  },
+                  seenCount: 0,
+                });
+
+                logToSpan(
+                  {
+                    level: 'WARNING',
+                    message: `Tool "${item.name}" blocked - permission required`,
+                    tool: JSON.stringify({
+                      name: item.name,
+                      kind: resolvedToolDef.serverConfig.kind,
+                      originalName: resolvedToolDef.serverConfig.name,
+                      toolUseId: item.toolUseId,
+                    }),
+                    context: JSON.stringify({
+                      accessControl: param.permissionManagerContext.accesscontrol,
+                      agent: param.permissionManagerContext.name,
+                    }),
+                  },
+                  span,
+                );
+
+                param.onStream({
+                  type: 'agent.tool.permission.blocked',
+                  data: {
+                    tools: [
+                      {
+                        name: item.name,
+                        kind: resolvedToolDef.serverConfig.kind,
+                        originalName: resolvedToolDef.serverConfig.name,
+                      },
+                    ],
+                    usage: tokenUsage,
+                    executionunits: executionUnits,
+                  },
                 });
                 continue;
               }
@@ -317,8 +372,53 @@ export const agentLoop = async (
             for (const item of await Promise.all(internalToolResultPromises)) {
               messages.push({ role: 'user', content: item, seenCount: 0 });
             }
-            if (toolsPendingPermission.length) {
-              // TODO - Create tool call request event here and add in arvotoolcalls
+            if (param.permissionManager && toolsPendingPermission.length) {
+              const toolPermissionRequest = await param.permissionManager?.requestBuilder(
+                param.permissionManagerContext,
+                toolsPendingPermission,
+                { otelInfo },
+              );
+
+              arvoToolCalls.push({
+                type: 'tool_use',
+                name: param.permissionManager.contract.accepts.type,
+                toolUseId: v4(),
+                input: toolPermissionRequest,
+              });
+
+              logToSpan(
+                {
+                  level: 'INFO',
+                  message: `Permission request created for ${toolsPendingPermission.length} blocked tool(s)`,
+                  permissionRequest: JSON.stringify({
+                    contractType: param.permissionManager.contract.accepts.type,
+                    toolCount: toolsPendingPermission.length,
+                    tools: toolsPendingPermission.map((tool) => ({
+                      name: tool.name,
+                      kind: tool.serverConfig.kind,
+                      originalName: tool.serverConfig.name,
+                    })),
+                  }),
+                  context: JSON.stringify({
+                    accessControl: param.permissionManagerContext.accesscontrol,
+                    agent: param.permissionManagerContext.name,
+                  }),
+                },
+                span,
+              );
+
+              param.onStream({
+                type: 'agent.tool.permission.requested',
+                data: {
+                  tools: toolsPendingPermission.map((tool) => ({
+                    name: tool.name,
+                    kind: tool.serverConfig.kind,
+                    originalName: tool.serverConfig.name,
+                  })),
+                  usage: tokenUsage,
+                  executionunits: executionUnits,
+                },
+              });
             }
             if (arvoToolCalls.length) {
               param.onStream({

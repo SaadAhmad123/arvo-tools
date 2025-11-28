@@ -4,6 +4,7 @@ sequenceDiagram
     participant Agent as ArvoAgent Handler
     participant Context as Context Builder
     participant CoreLoop as Agent Core Loop
+    participant PermMgr as Permission Manager
     participant LLM as LLM Integration
     participant Tools as Tool Executors
     participant Memory as Memory Backend
@@ -29,7 +30,20 @@ sequenceDiagram
             end
         end
         
-        Agent->>CoreLoop: Start cognitive loop({ initLifecycle: 'init', system, messages, tools })
+        rect rgb(255, 245, 230)
+            Note over Agent,PermMgr: Permission Policy Initialization
+            Agent->>Agent: Build permissionManagerContext
+            Note over Agent: {<br/>  subject: input.subject,<br/>  accesscontrol: input.accesscontrol,<br/>  name: contracts.self.type<br/>}
+            
+            alt permissionPolicy handler defined
+                Agent->>Agent: Evaluate permissionPolicy({ services, mcp, tools })
+                Agent-->>Agent: permissionPolicy: string[] (tool names requiring auth)
+            else No policy defined
+                Agent->>Agent: permissionPolicy = []
+            end
+        end
+        
+        Agent->>CoreLoop: Start cognitive loop({ initLifecycle: 'init', system, messages, tools, permissionPolicy })
     else RESUME PHASE (service response received)
         Resumable->>Agent: execute(service response, context: AgentState)
         Agent->>Otel: Start span
@@ -43,11 +57,28 @@ sequenceDiagram
             Agent->>Agent: Match service.parentid to awaitingToolCalls[toolUseId]
             Agent->>Agent: Populate tool result: awaitingToolCalls[toolUseId].data = service.data
             
+            rect rgb(255, 245, 230)
+                Note over Agent,PermMgr: Permission Response Handling
+                
+                alt Service is Permission Manager response
+                    Agent->>PermMgr: set(permissionManagerContext, service)
+                    Note over PermMgr: Update internal permission database<br/>with granted/denied authorizations
+                    
+                    alt Permission Manager returned error
+                        Agent-->>Agent: throw Error('[Critical] Permission request failed')
+                    end
+                end
+            end
+            
             alt All tool results received
                 Agent->>Agent: Append all tool results to message history
                 loop For each tool result
-                    Agent->>Agent: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result', toolUseId, content },<br/>  seenCount: 0<br/>})
-                    Note over Agent: **SeenCount Init:**<br/>New tool results start with seenCount=0<br/>(LLM hasn't seen them yet)
+                    alt Result is NOT from Permission Manager
+                        Agent->>Agent: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result', toolUseId, content },<br/>  seenCount: 0<br/>})
+                    else Result is from Permission Manager
+                        Agent->>Agent: messages.push({<br/>  role: 'user',<br/>  content: { type: 'text', content: permission_response },<br/>  seenCount: 0<br/>})
+                        Note over Agent: Permission responses wrapped as text<br/>rather than tool_result for LLM visibility
+                    end
                 end
             else Still waiting for other tool responses
                 Agent->>Resumable: return { context: updatedState }
@@ -55,7 +86,15 @@ sequenceDiagram
             end
         end
         
-        Agent->>CoreLoop: Start cognitive loop({ initLifecycle: 'tool_result', messages })
+        rect rgb(255, 245, 230)
+            Note over Agent: Permission Context Restoration
+            Agent->>Agent: Restore permissionManagerContext from state
+            Note over Agent: {<br/>  subject: context.currentSubject,<br/>  accesscontrol: context.initEventAccessControl,<br/>  name: contracts.self.type<br/>}
+            
+            Agent->>Agent: Restore permissionPolicy from handler config
+        end
+        
+        Agent->>CoreLoop: Start cognitive loop({ initLifecycle: 'tool_result', messages, permissionPolicy })
     end
     
     rect rgb(220, 240, 220)
@@ -84,6 +123,21 @@ sequenceDiagram
                 CoreLoop->>CoreLoop: prioritizeToolCalls(response.toolRequests, nameToToolMap)
                 Note over CoreLoop: **Priority-Based Filtering:**<br/>Only execute highest-priority batch,<br/>silently drop lower-priority calls
                 
+                rect rgb(255, 250, 240)
+                    Note over CoreLoop,PermMgr: **Permission Authorization Gate**
+                    
+                    CoreLoop->>CoreLoop: Filter tools requiring permission
+                    Note over CoreLoop: toolsRequiringAuth = prioritizedToolCalls<br/>  .filter(tc => permissionPolicy.includes(tc.name))
+                    
+                    alt Tools requiring permission exist
+                        CoreLoop->>PermMgr: get(permissionManagerContext, toolDefinitions)
+                        Note over PermMgr: **Permission Check:**<br/>Queries internal state for each tool.<br/>Returns { toolName: boolean }
+                        PermMgr-->>CoreLoop: toolPermissionMap: Record<string, boolean>
+                    else No tools require permission
+                        CoreLoop->>CoreLoop: toolPermissionMap = {}
+                    end
+                end
+                
                 rect rgb(240, 240, 200)
                     Note over CoreLoop,Tools: Tool Execution Strategy Selection
                     
@@ -94,6 +148,16 @@ sequenceDiagram
                         alt Tool doesn't exist
                             CoreLoop->>CoreLoop: Push error message
                             Note over CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result', error },<br/>  seenCount: 0<br/>})
+                        else Tool permission denied (toolPermissionMap[name] === false)
+                            rect rgb(255, 230, 230)
+                                Note over CoreLoop,PermMgr: **Authorization Blocked**
+                                
+                                CoreLoop->>CoreLoop: Collect blocked tool for permission request
+                                Note over CoreLoop: toolsPendingPermission.push(toolDefinition)
+                                
+                                CoreLoop->>CoreLoop: Push blocking feedback message
+                                Note over CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result',<br/>    toolUseId,<br/>    content: '[Critical] Tool blocked - permission required.<br/>             Request lodged, please retry after approval.' },<br/>  seenCount: 0<br/>})<br/><br/>**Explicit feedback to LLM:**<br/>Tool was blocked but permission is being requested
+                            end
                         else Tool is MCP
                             CoreLoop->>Tools: mcp.invokeTool(name, arguments)
                             Tools-->>CoreLoop: result
@@ -125,7 +189,20 @@ sequenceDiagram
                     Note over CoreLoop: **SeenCount Pattern:**<br/>- Assistant messages (tool calls): seenCount=1<br/>- User messages (tool results): seenCount=0
                 end
                 
-                alt Arvo service calls exist
+                rect rgb(255, 250, 240)
+                    Note over CoreLoop,PermMgr: **Permission Request Construction**
+                    
+                    alt toolsPendingPermission not empty AND permissionManager exists
+                        CoreLoop->>PermMgr: requestBuilder(permissionManagerContext, toolsPendingPermission)
+                        Note over PermMgr: **Build Permission Request:**<br/>Developer-defined logic creates event payload<br/>with context about blocked tools
+                        PermMgr-->>CoreLoop: permissionRequestData (contract accepts schema)
+                        
+                        CoreLoop->>CoreLoop: Create permission request tool call
+                        Note over CoreLoop: arvoToolCalls.push({<br/>  type: 'tool_use',<br/>  name: permissionManager.contract.accepts.type,<br/>  toolUseId: uuid(),<br/>  input: permissionRequestData<br/>})<br/><br/>**Permission request treated as Arvo service call**
+                    end
+                end
+                
+                alt Arvo service calls exist (including permission requests)
                     CoreLoop->>Otel: End span
                     CoreLoop-->>Agent: { messages, toolCalls: arvoToolCalls, toolInteractions, executionUnits }
                     
@@ -133,14 +210,14 @@ sequenceDiagram
                         Note over Agent,Memory: Suspension & Persistence Phase
                         
                         Agent->>Agent: Build AgentState for persistence
-                        Note over Agent: {<br/>  currentSubject,<br/>  system,<br/>  messages, // WITH seenCount preserved per message<br/>  toolInteractions,<br/>  awaitingToolCalls,<br/>  totalExecutionUnits<br/>}
+                        Note over Agent: {<br/>  initEventAccessControl,<br/>  currentSubject,<br/>  system,<br/>  messages, // WITH seenCount preserved per message<br/>  toolInteractions,<br/>  awaitingToolCalls,<br/>  totalExecutionUnits<br/>}
                         
                         Agent->>Resumable: return { context: AgentState, services: [...] }
-                        Note over Resumable,Memory: ArvoResumable handles:<br/>1. Persisting context (with seenCount) to memory<br/>2. Emitting service call events<br/>3. Suspending execution
+                        Note over Resumable,Memory: ArvoResumable handles:<br/>1. Persisting context (with seenCount) to memory<br/>2. Emitting service call events<br/>   (including permission requests to configured domains)<br/>3. Suspending execution<br/><br/>**Permission requests routed via domains<br/>(e.g., 'human.interaction')**
                     end
                 else No Arvo service calls (only sync tools executed)
                     CoreLoop->>CoreLoop: lifecycle = 'tool_result'
-                    Note over CoreLoop: Continue iteration with<br/>updated message history<br/>(all seenCount already incremented)
+                    Note over CoreLoop: Continue iteration with<br/>updated message history<br/>(all seenCount already incremented)<br/><br/>**LLM will see blocked tool feedback<br/>and may retry after seeing approval**
                 end
                 
             else Response Type: TEXT or JSON

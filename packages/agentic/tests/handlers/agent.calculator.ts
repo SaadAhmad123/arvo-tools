@@ -9,9 +9,10 @@ import {
   createArvoAgent,
   MCPClient,
   openaiLLMIntegration,
+  SimplePermissionManager,
 } from '../../src';
 import { calculatorContract } from './calculator.handler';
-import { humanReviewContract } from './contract.human.review';
+import { HUMAN_INTERACTION_DOMAIN, humanReviewContract } from './contract.human.review';
 
 dotenv.config({ path: '../../.env' });
 
@@ -36,6 +37,10 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
           .optional()
           .describe('The Astro documentation operation output if there is any'),
       }),
+    },
+    '3.0.0': {
+      init: AgentDefaults.INIT_MULTIMODAL_SCHEMA,
+      complete: AgentDefaults.COMPLETE_SCHEMA,
     },
   },
   metadata: {
@@ -80,6 +85,7 @@ export const calculatorAgent: EventHandlerFactory<{
     }),
     llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
     memory,
+    permissionManager: new SimplePermissionManager({ domains: [HUMAN_INTERACTION_DOMAIN] }),
     handler: {
       '1.0.0': {
         // Dynamic context building for the agent when it is initialised.
@@ -133,6 +139,35 @@ export const calculatorAgent: EventHandlerFactory<{
           }
           return { error: new Error('The final output must be output format compliant only') };
         },
+      },
+      '3.0.0': {
+        explicityPermissionRequired: ({ services, mcp }) => [
+          services.calculator.name,
+          mcp.search_astro_docs.name,
+        ],
+        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
+          invocationParam: {
+            model: 'gpt-4o-mini',
+          },
+        }),
+        context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
+          cleanString(`
+            You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
+            If a file is available to you then read it promptly and put all the relevant information from the file for your task in your note by calling tool ${tools.tools.selfTalk.name}.
+            Putting the content of the files in tool ${tools.tools.selfTalk.name} is paramount because you can only see the file content once in your lifetime.
+            For the tool ${tools.tools.selfTalk.name} you can be as verbose as you feel is necessary so that you can resolve the users request fully and confidently.
+            Then, you must create a plan to resolve the request and get approval from the tool ${tools.services.humanReview.name}. You are banned from calling any tool, 
+            other than ${tools.tools.selfTalk.name}, before
+            getting explicit approval from the tool ${tools.services.humanReview.name}
+            If the user requests for information regarding astro, the use the relevant tools.
+            If the user requests for a calculations, then use tool ${tools.services.calculator.name}.
+            Then, you must use the tool ${tools.services.calculator.name} to perform the calculations.
+
+            Tip: You can call tools ${tools.tools.selfTalk.name} and ${tools.services.humanReview.name} in
+            parallel if you can.
+          `),
+        ),
+        output: AgentDefaults.OUTPUT_BUILDER,
       },
     },
   });

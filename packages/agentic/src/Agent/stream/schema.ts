@@ -80,4 +80,38 @@ export const AgentStreamEventSchema = z.discriminatedUnion('type', [
       content: z.string(),
     }),
   }),
+  z.object({
+    type: z.literal('agent.tool.permission.blocked'),
+    data: z.object({
+      tools: z
+        .object({
+          name: z.string(),
+          kind: z.string(),
+          originalName: z.string(),
+        })
+        .array(),
+      usage: z.object({
+        prompt: z.number(),
+        completion: z.number(),
+      }),
+      executionunits: z.number(),
+    }),
+  }),
+  z.object({
+    type: z.literal('agent.tool.permission.requested'),
+    data: z.object({
+      tools: z
+        .object({
+          name: z.string(),
+          kind: z.string(),
+          originalName: z.string(),
+        })
+        .array(),
+      usage: z.object({
+        prompt: z.number(),
+        completion: z.number(),
+      }),
+      executionunits: z.number(),
+    }),
+  }),
 ]);
