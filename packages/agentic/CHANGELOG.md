@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.0
+
+### Minor Changes
+
+- 2f429e2: Added agent permission manager for explicit tool permission management
+
 ## 1.1.1
 
 ### Patch Changes
