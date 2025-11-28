@@ -16,6 +16,7 @@ import type {
   AgentLLMIntegrationParam,
 } from '../Integrations/types';
 import type { IMCPClient } from '../interfaces.mcp';
+import type { IPermissionManager } from '../interfaces.permission.manager';
 import type { NonEmptyArray, PromiseAble } from '../types';
 import type {
   AgentMediaContentSchema,
@@ -304,6 +305,12 @@ export type CreateArvoAgentParam<
      * @remarks
      * Unlike local `tools`, calling a service here causes the Agent to **emit an event and suspend**.
      * It allows the Agent to orchestrate long-running or distributed workflows.
+     *
+     * Each service can specify:
+     * - `contract`: The versioned contract of the target service
+     * - `domains`: Event routing hints (e.g., ['human.interaction'] or [ArvoDomain.FROM_EVENT_CONTRACT])
+     * - `priority`: Execution precedence for batch tool calls
+     *
      */
     services: TServiceContract;
   };
@@ -332,8 +339,15 @@ export type CreateArvoAgentParam<
   mcp?: IMCPClient;
 
   /**
-   * A map of JavaScript functions executed synchronously within the Agent's process.
-   * Best for lightweight logic (math, date checks, regex).
+   * Internal tools executed synchronously within the agent's process.
+   *
+   * Best suited for lightweight operations.
+   * Internal tools should complete in milliseconds. For operations requiring
+   * network I/O, database access, or extended computation, use Arvo services
+   * to avoid blocking the agent's execution.
+   *
+   * Each tool is created via `createAgentTool()` which adds automatic
+   * input validation and OpenTelemetry instrumentation.
    */
   tools?: TTools;
 
@@ -341,40 +355,145 @@ export type CreateArvoAgentParam<
    * The default mechanism to force the Agent to generate a specific output structure.
    * - `'text'`: Standard conversational response.
    * - `'json'`: Structured Output / JSON Mode (validated against the contract's output schema).
+   *
+   * Individual versions can override this via their handler configuration,
+   * enabling progressive migration from text to structured outputs.
    * @defaultValue 'text'
    */
   llmResponseType?: AgentLLMIntegrationParam['outputFormat']['type'];
 
   /**
-   * The default llm integrations function which connect this agent to the intelligence layer
-   * (e.g., `openaiLLMIntegration`, `anthropicLLMIntegration`).
+   * Default LLM integration function connecting the agent to its reasoning engine.
+   * Individual versions can override this to use different models per version.
    */
   llm: AgentLLMIntegration;
 
-  /** A agent stream listener hook */
+  /**
+   * Optional event stream listener for real-time agent activity monitoring.
+   *
+   * Useful for building real-time UIs or logging.
+   * Events include contextual metadata (subject, initiator, agent version) for
+   * correlation across distributed traces.
+   */
   onStream?: AgentStreamListener;
 
   /**
-   * Arvo enforces strict version compliance. You must provide specific logic
-   * (System Prompt Building & Output Mapping) for **every semantic version**
-   * defined in `contracts.self`.
+   * Optional non-LLM authorization layer for deterministic tool access control.
    *
-   * This allows you to upgrade prompts or change output schemas in `v2` without
-   * breaking consumers of `v1`.
+   * The permission manager enforces security policies outside the LLM's reasoning,
+   * preventing prompt injection attacks from bypassing authorization.
+   * This pattern is critical for systems requiring explicity permission policy implmentation,
+   * compliance enforcement, and defense against AI jailbreaking.
+   */
+  permissionManager?: IPermissionManager;
+
+  /**
+   * Version-specific handler implementations for each contract version.
+   *
+   * Arvo enforces complete version coverage: you must provide handlers for every
+   * version defined in `contracts.self.versions`.
+   *
+   * Version handlers enable independent evolution of prompts, models, and output
+   * schemas without breaking existing consumers of older versions.
    */
   handler: {
     [K in keyof TSelfContract['versions'] & ArvoSemanticVersion]: {
       /**
-       * An optional override to forces the Agent to generate a specific output structure.
-       * - `'text'`: Standard conversational response.
-       * - `'json'`: Structured Output / JSON Mode (validated against the contract's output schema).
+       * Function defining which tools require explicit permission for this version.
+       *
+       * Tools not in this list bypass permission checks entirely. This enables
+       * selective authorization where only sensitive operations (data deletion,
+       * financial transactions, external integrations) require approval while
+       * read-only or low-risk tools execute freely.
+       *
+       * The function receives all available tools (services, MCP, internal) to
+       * support dynamic policy decisions based on the tool catalog.
+       *
+       * @example
+       * ```typescript
+       * explicityPermissionRequired: async ({ services, tools, mcp }) => [
+       *   services.deleteUser.name,
+       *   services.processRefund.name,
+       *   tools.executeSQL.name,
+       *   mcp['some_mcp_tool'].name,
+       * ]
+       * ```
+       */
+      explicityPermissionRequired?: (
+        tools: AgentLLMContext<TServiceContract, TTools>['tools'],
+      ) => PromiseAble<string[]>;
+
+      /**
+       * Version-specific override for the LLM response format.
+       * Overrides the agent-level `llmResponseType` default for this version only.
        */
       llmResponseType?: AgentLLMIntegrationParam['outputFormat']['type'];
-      /** An optional override llm integration specific to this version. This allows to completely version an agent */
+
+      /**
+       * Version-specific override for the LLM integration.
+       * Overrides the agent-level `llm` default for this version only.
+       * Enables model evolution across versions.
+       * Each version can use completely different models or providers without
+       * affecting other versions or requiring code changes in consumers.
+       */
       llm?: AgentLLMIntegration;
-      /** Generates the System Prompt and initial conversation context for this version. */
+
+      /**
+       * Context engineering function executed once during agent initialization.
+       *
+       * Transforms the initialization event into the agent's foundational state:
+       * - System prompt defining the agent's role and capabilities
+       * - Initial message history seeding the conversation
+       *
+       * The returned context persists in memory and forms the base that all
+       * subsequent tool results and LLM responses append to. This function
+       * runs only once per workflow—resumptions after service calls do not
+       * re-execute the context builder.
+       *
+       * @example
+       * ```typescript
+       * context: async ({ input, tools, span }) => ({
+       *   system: `You are a customer support agent. Available tools:
+       *            - ${tools.services.billing.name}: Access billing data
+       *            - ${tools.services.ticketing.name}: Create support tickets`,
+       *   messages: [
+       *     {
+       *       role: 'user',
+       *       content: { type: 'text', content: input.data.customerQuery },
+       *       seenCount: 0
+       *     }
+       *   ]
+       * })
+       * ```
+       */
       context: AgentContextBuilder<TSelfContract, K, TServiceContract, TTools>;
-      /** Maps the LLM's final response to the strict output contract for this version. */
+
+      /**
+       * Output validation function mapping LLM responses to contract-compliant events.
+       * Executes when the agent generates a final response (not a tool call).
+       *
+       * Returns either:
+       * - `{ data: {...} }`: Successfully validated output matching the contract
+       * - `{ error: Error }`: Validation failure triggering self-correction loop
+       *
+       * When validation fails, the agent appends the error to message history
+       * and re-invokes the LLM, enabling automatic correction of malformed outputs.
+       *
+       * @example
+       * ```typescript
+       * output: ({ content, parsedContent, outputFormat, span }) => {
+       *   const result = outputFormat.safeParse(
+       *     parsedContent ?? JSON.parse(content)
+       *   );
+       *
+       *   if (result.error) {
+       *     return { error: result.error };
+       *   }
+       *
+       *   return { data: result.data };
+       * }
+       * ```
+       */
       output: AgentOutputBuilder<TSelfContract, K>;
     };
   };

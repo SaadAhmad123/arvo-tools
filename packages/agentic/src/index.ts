@@ -45,4 +45,5 @@ export type {
   AgentLLMIntegrationParam,
 } from './Integrations/types';
 export type { IMCPClient } from './interfaces.mcp';
+export { SimplePermissionManager } from './SimplePermissionManager';
 export type { NonEmptyArray, OtelInfoType, PromiseAble } from './types';

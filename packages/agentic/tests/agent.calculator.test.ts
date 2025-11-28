@@ -1,4 +1,4 @@
-import { type ArvoEvent, createArvoEventFactory } from 'arvo-core';
+import { type ArvoEvent, cleanString, createArvoEventFactory } from 'arvo-core';
 import {
   type ArvoTestSuite,
   createSimpleEventBroker,
@@ -6,6 +6,7 @@ import {
   SimpleMachineMemory,
 } from 'arvo-event-handler';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { SimplePermissionManager } from '../src/index.js';
 import { calculatorAgent, calculatorAgentContract } from './handlers/agent.calculator';
 import { calculatorHandler } from './handlers/calculator.handler';
 import { humanReviewContract } from './handlers/contract.human.review.js';
@@ -38,8 +39,12 @@ const tests: ArvoTestSuite = {
             createArvoEventFactory(calculatorAgentContract.version('2.0.0')).accepts({
               source: TEST_EVENT_SOURCE,
               data: {
-                message:
-                  'What is x in 2x+5=67. Also in parallel can you help me get start on Astro',
+                message: cleanString(`
+                  What is x in 2x+5=67. Also in parallel can you help me get start on Astro.
+                  Before executing the tools present the whole plan via human review tool and
+                  await approval. You are banned from execution any tools before human review tool 
+                  Use only one human review tool call at max. 
+                `),
                 parentSubject$$: null,
               },
               accesscontrol: 'xyz',
@@ -69,6 +74,77 @@ const tests: ArvoTestSuite = {
           expectedEvents: (events) => {
             expect(events).toHaveLength(1);
             expect(events[0]?.type).toBe(calculatorAgentContract.metadata.completeEventType);
+            return true;
+          },
+        },
+      ],
+    },
+    {
+      name: 'should get permission to call calculator and then go a head',
+      steps: [
+        {
+          input: () =>
+            createArvoEventFactory(calculatorAgentContract.version('3.0.0')).accepts({
+              source: TEST_EVENT_SOURCE,
+              data: {
+                message: cleanString(`
+                  What is x in 2x+5=67. Also in parallel can you help me get start on Astro. 
+                  Before executing the tools present the whole plan via human review tool and 
+                  await approval. You are banned from execution any tools before human review tool
+                `),
+                parentSubject$$: null,
+              },
+              accesscontrol: 'xyz',
+            }),
+          expectedEvents: (events) => {
+            expect(events).toHaveLength(1);
+            expect(events[0]?.type).toBe(humanReviewContract.version('1.0.0').accepts.type);
+            expect(events[0]?.accesscontrol).toBe('xyz');
+            return true;
+          },
+        },
+        {
+          input: (prev) =>
+            createArvoEventFactory(humanReviewContract.version('1.0.0')).emits({
+              // Default context passing so that event chains can be stitched
+              subject: prev?.[0]?.data?.parentSubject$$ ?? prev?.[0]?.subject ?? undefined,
+              parentid: prev?.[0]?.id ?? undefined,
+              to: prev?.[0]?.source ?? undefined,
+              accesscontrol: prev?.[0]?.accesscontrol ?? undefined,
+              // The event data
+              type: 'evt.human.review.success',
+              source: TEST_EVENT_SOURCE,
+              data: {
+                response: 'approved',
+              },
+            }),
+          expectedEvents: (events) => {
+            expect(events).toHaveLength(1);
+            expect(events[0]?.type).toBe(SimplePermissionManager.VERSIONED_CONTRACT.accepts.type);
+            expect(events[0]?.accesscontrol).toBe('xyz');
+            return true;
+          },
+        },
+        {
+          input: (prev) =>
+            createArvoEventFactory(SimplePermissionManager.VERSIONED_CONTRACT).emits({
+              // Default context passing so that event chains can be stitched
+              subject: prev?.[0]?.data?.parentSubject$$ ?? prev?.[0]?.subject ?? undefined,
+              parentid: prev?.[0]?.id ?? undefined,
+              to: prev?.[0]?.source ?? undefined,
+              accesscontrol: prev?.[0]?.accesscontrol ?? undefined,
+              // The event data
+              type: 'evt.arvo.default.simple.permission.request.success',
+              source: TEST_EVENT_SOURCE,
+              data: {
+                granted: ['service_com_calculator_execute'],
+                denied: ['mcp_search_astro_docs'],
+              },
+            }),
+          expectedEvents: (events) => {
+            expect(events).toHaveLength(1);
+            expect(events[0]?.type).toBe(calculatorAgentContract.metadata.completeEventType);
+            expect(events[0]?.accesscontrol).toBe('xyz');
             return true;
           },
         },
