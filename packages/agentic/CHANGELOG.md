@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.1
+
+### Patch Changes
+
+- ebc405b: Started a README for agentic package
+
 ## 1.2.0
 
 ### Minor Changes
