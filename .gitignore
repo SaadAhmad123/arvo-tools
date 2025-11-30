@@ -28,6 +28,5 @@ Thumbs.db
 *.tmp
 *.temp
 .cache
-.npmrc
 .github/workflows/*.log
 .husky/_

@@ -84,38 +84,38 @@ importers:
   packages/agentic:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.71.0
-        version: 0.71.0(zod@3.25.76)
+        specifier: 0.71.0
+        version: 0.71.0(zod@3.25.74)
       '@arizeai/openinference-semantic-conventions':
-        specifier: ^2.1.2
+        specifier: 2.1.2
         version: 2.1.2
       '@modelcontextprotocol/sdk':
-        specifier: ^1.22.0
+        specifier: 1.22.0
         version: 1.22.0
       '@opentelemetry/api':
         specifier: 1.9.0
         version: 1.9.0
       arvo-core:
-        specifier: ^3.0.19
-        version: 3.0.19
+        specifier: 3.0.23
+        version: 3.0.23
       arvo-event-handler:
-        specifier: ^3.0.19
-        version: 3.0.19
+        specifier: 3.0.23
+        version: 3.0.23
       openai:
-        specifier: ^6.9.1
-        version: 6.9.1(zod@3.25.76)
+        specifier: 6.9.1
+        version: 6.9.1(zod@3.25.74)
       uuid:
-        specifier: ^11.1.0
+        specifier: 11.1.0
         version: 11.1.0
       zod:
-        specifier: ^3.25.74
-        version: 3.25.76
+        specifier: 3.25.74
+        version: 3.25.74
       zod-to-json-schema:
-        specifier: ^3.24.6
-        version: 3.25.0(zod@3.25.76)
+        specifier: 3.25.0
+        version: 3.25.0(zod@3.25.74)
     devDependencies:
       '@types/node':
-        specifier: ^24.10.1
+        specifier: 24.10.1
         version: 24.10.1
 
 packages:
@@ -1332,12 +1332,12 @@ packages:
     resolution: {integrity: sha512-HGyxoOTYUyCM6stUe6EJgnd4EoewAI7zMdfqO+kGjnlZmBDz/cR5pf8r/cR4Wq60sL/p0IkcjUEEPwS3GFrIyw==}
     engines: {node: '>=8'}
 
-  arvo-core@3.0.19:
-    resolution: {integrity: sha512-cmGavmg+BeI7HhWE7G/9BZo1KnWTq8Lwfsdlj+YsjISyq8xrny/lIPprYwy+MC8qWpo2LxmpDXBU8zhOpU4wUg==}
+  arvo-core@3.0.23:
+    resolution: {integrity: sha512-kvgRX1wqrRUcFHhLd4qApPnYeuiff9dlF6Fqi8Emh/l8UxRNRxcLuxxjB9Mgkv06b4wzWmBbxwSGUCyArjxfYg==}
     engines: {node: '>=18.0.0'}
 
-  arvo-event-handler@3.0.19:
-    resolution: {integrity: sha512-74XpsofZEa4ruFpSzyatEzrSqZUjlIh2Th3qdbKXxvX+vVSjtjWQn7FMuPhdXXGh61/e9dJYQMQPcEe4iaa1zA==}
+  arvo-event-handler@3.0.23:
+    resolution: {integrity: sha512-Mew4N0u7gfDKznyKdo12/Mlm+/uCzFefGyd9zxTzrWGQcBE/qa+qvHAyRMNb8qMcnQul85d215PFyqM+QVsYxg==}
     engines: {node: '>=18.0.0'}
 
   assertion-error@2.0.1:
@@ -2355,19 +2355,19 @@ packages:
     peerDependencies:
       zod: ^3.25 || ^4
 
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+  zod@3.25.74:
+    resolution: {integrity: sha512-J8poo92VuhKjNknViHRAIuuN6li/EwFbAC8OedzI8uxpEPGiXHGQu9wemIAioIpqgfB4SySaJhdk0mH5Y4ICBg==}
 
   zone.js@0.15.1:
     resolution: {integrity: sha512-XE96n56IQpJM7NAoXswY3XRLcWFW83xe0BiAOeMD7K5k5xecOeul3Qcpx6GqEeeHNkW5DWL5zOyTbEfB4eti8w==}
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.71.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.71.0(zod@3.25.74)':
     dependencies:
       json-schema-to-ts: 3.1.1
     optionalDependencies:
-      zod: 3.25.76
+      zod: 3.25.74
 
   '@arizeai/openinference-semantic-conventions@2.1.2': {}
 
@@ -2704,8 +2704,8 @@ snapshots:
       express-rate-limit: 7.5.1(express@5.1.0)
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.0(zod@3.25.76)
+      zod: 3.25.74
+      zod-to-json-schema: 3.25.0(zod@3.25.74)
     transitivePeerDependencies:
       - supports-color
 
@@ -3773,24 +3773,24 @@ snapshots:
 
   array-union@2.1.0: {}
 
-  arvo-core@3.0.19:
+  arvo-core@3.0.23:
     dependencies:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.0)
       pako: 2.1.0
       uuid: 11.1.0
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.0(zod@3.25.76)
+      zod: 3.25.74
+      zod-to-json-schema: 3.25.0(zod@3.25.74)
 
-  arvo-event-handler@3.0.19:
+  arvo-event-handler@3.0.23:
     dependencies:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 1.30.1(@opentelemetry/api@1.9.0)
-      arvo-core: 3.0.19
+      arvo-core: 3.0.23
       uuid: 11.1.0
       xstate: 5.24.0
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.0(zod@3.25.76)
+      zod: 3.25.74
+      zod-to-json-schema: 3.25.0(zod@3.25.74)
 
   assertion-error@2.0.1: {}
 
@@ -4311,9 +4311,9 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.9.1(zod@3.25.76):
+  openai@6.9.1(zod@3.25.74):
     optionalDependencies:
-      zod: 3.25.76
+      zod: 3.25.74
 
   outdent@0.5.0: {}
 
@@ -4768,10 +4768,10 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 21.1.1
 
-  zod-to-json-schema@3.25.0(zod@3.25.76):
+  zod-to-json-schema@3.25.0(zod@3.25.74):
     dependencies:
-      zod: 3.25.76
+      zod: 3.25.74
 
-  zod@3.25.76: {}
+  zod@3.25.74: {}
 
   zone.js@0.15.1: {}
