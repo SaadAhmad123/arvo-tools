@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.2
+
+### Patch Changes
+
+- 3c8200d: Updated Arvo versions
+
 ## 1.2.1
 
 ### Patch Changes
