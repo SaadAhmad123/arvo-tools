@@ -110,11 +110,7 @@ export const calculatorAgent: EventHandlerFactory<{
       },
       '2.0.0': {
         llmResponseType: 'json',
-        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
-          invocationParam: {
-            model: 'gpt-4o-mini',
-          },
-        }),
+        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
@@ -145,11 +141,7 @@ export const calculatorAgent: EventHandlerFactory<{
           services.calculator.name,
           mcp.search_astro_docs.name,
         ],
-        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
-          invocationParam: {
-            model: 'gpt-4o-mini',
-          },
-        }),
+        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
