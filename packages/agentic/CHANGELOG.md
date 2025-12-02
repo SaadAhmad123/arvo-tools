@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.3
+
+### Patch Changes
+
+- 4364baa: Updated the arvo deps versions and added defaults of event emission domains
+
 ## 1.2.2
 
 ### Patch Changes
