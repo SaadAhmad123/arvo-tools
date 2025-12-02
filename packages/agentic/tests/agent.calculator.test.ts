@@ -1,4 +1,9 @@
-import { type ArvoEvent, cleanString, createArvoEventFactory } from 'arvo-core';
+import {
+  type ArvoEvent,
+  ArvoOrchestrationSubject,
+  cleanString,
+  createArvoEventFactory,
+} from 'arvo-core';
 import {
   type ArvoTestSuite,
   createSimpleEventBroker,
@@ -9,7 +14,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { SimplePermissionManager } from '../src/index.js';
 import { calculatorAgent, calculatorAgentContract } from './handlers/agent.calculator';
 import { calculatorHandler } from './handlers/calculator.handler';
-import { humanReviewContract } from './handlers/contract.human.review.js';
+import { HUMAN_INTERACTION_DOMAIN, humanReviewContract } from './handlers/contract.human.review.js';
 
 const TEST_EVENT_SOURCE = 'test.test.test';
 const memory = new SimpleMachineMemory();
@@ -52,6 +57,10 @@ const tests: ArvoTestSuite = {
           expectedEvents: (events) => {
             expect(events).toHaveLength(1);
             expect(events[0]?.type).toBe(humanReviewContract.version('1.0.0').accepts.type);
+            expect(events[0]?.domain).toBe(HUMAN_INTERACTION_DOMAIN);
+            expect(ArvoOrchestrationSubject.parse(events[0]?.subject ?? '').execution.domain).toBe(
+              null,
+            );
             expect(events[0]?.accesscontrol).toBe('xyz');
             return true;
           },
