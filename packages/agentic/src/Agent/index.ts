@@ -131,6 +131,7 @@ export const createArvoAgent = <
   tools,
   onStream,
   permissionManager,
+  defaultEventEmissionDomains,
 }: CreateArvoAgentParam<TSelfContract, TServiceContract, TTools>) => {
   const serviceContracts = Object.fromEntries(
     Object.entries(contracts.services).map(([key, { contract }]) => [key, contract]),
@@ -154,6 +155,7 @@ export const createArvoAgent = <
     types: {
       context: {} as AgentState,
     },
+    defaultEventEmissionDomains,
     executionunits: 0,
     handler: Object.fromEntries(
       Object.keys(contracts.self.versions).map((ver) => [

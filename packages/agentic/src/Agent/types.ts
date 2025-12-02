@@ -7,7 +7,7 @@ import type {
   InferVersionedArvoContract,
   VersionedArvoContract,
 } from 'arvo-core';
-import type { IMachineMemory } from 'arvo-event-handler';
+import type { createArvoResumable, IMachineMemory } from 'arvo-event-handler';
 import type z from 'zod';
 import type { AgentInternalTool } from '../AgentTool/types';
 import type {
@@ -386,6 +386,15 @@ export type CreateArvoAgentParam<
    * compliance enforcement, and defense against AI jailbreaking.
    */
   permissionManager?: IPermissionManager;
+
+  /**
+   * The default domains for the emitted events by the agents.
+   *
+   * @default - Uses the ArvoResumable defaults
+   */
+  defaultEventEmissionDomains?: Parameters<
+    typeof createArvoResumable
+  >[0]['defaultEventEmissionDomains'];
 
   /**
    * Version-specific handler implementations for each contract version.
