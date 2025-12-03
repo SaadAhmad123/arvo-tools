@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.5
+
+### Patch Changes
+
+- 0200915: Added exports for OpenAI and Anthropic sdks used by the package
+
 ## 1.2.4
 
 ### Patch Changes
