@@ -14,9 +14,11 @@ export type OpenAILlmIntegrationConfig<TClient extends OpenAI | AzureOpenAI> = {
    * @default
    * { model: 'gpt-4o', max_completion_tokens: 4096, temperature: 0 }
    */
-  invocationParam?: Pick<
-    Parameters<TClient['chat']['completions']['create']>[0],
-    'model' | 'temperature' | 'max_tokens' | 'max_completion_tokens'
+  invocationParam?: Partial<
+    Pick<
+      Parameters<TClient['chat']['completions']['create']>[0],
+      'model' | 'temperature' | 'max_completion_tokens' | 'stream'
+    >
   >;
 
   /**

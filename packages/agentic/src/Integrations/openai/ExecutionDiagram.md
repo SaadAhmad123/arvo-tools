@@ -4,10 +4,12 @@ sequenceDiagram
     participant Integration as OpenAI Integration
     participant Otel as OpenTelemetry
     participant Formatter as Message Formatter
+    participant NonStream as Non-Streamable OpenAI
+    participant Stream as Streamable OpenAI
     participant OpenAI as OpenAI API
     participant Parser as Response Parser
 
-    Agent->>Integration: llm({ lifecycle, messages, system, tools, outputFormat })
+    Agent->>Integration: llm({ lifecycle, messages, system, tools, outputFormat, onStream })
     
     rect rgb(200, 220, 240)
         Note over Integration,Otel: Observability Setup Phase
@@ -15,15 +17,16 @@ sequenceDiagram
         Otel-->>Integration: span
         
         Integration->>Integration: Configure LLM parameters
-        Note over Integration: model = config.model ?? 'gpt-4o'<br/>temperature = config.temperature ?? 0
+        Note over Integration: model = config.model ?? 'gpt-4o'<br/>temperature = config.temperature ?? 0<br/>stream = config.stream ?? false
     end
     
     rect rgb(240, 220, 200)
         Note over Integration,Formatter: Context Processing Phase
         
-        alt config.contextTransformer is defined
-             Integration->>Integration: await config.contextTransformer({ messages, system })
-        else Default Context Processing (Media Masking)
+        Integration->>Integration: await contextTransformer({ messages, system })
+        Note over Integration: Uses config.contextTransformer<br/>or defaultContextTransformer
+        
+        alt Default Context Processing (Media Masking)
             loop For each message in messages
                 alt message.content.type === 'media' AND message.seenCount > 0
                     Integration->>Integration: Mask media content to Text
@@ -53,7 +56,7 @@ sequenceDiagram
         
         Integration->>Formatter: formatMessagesForOpenAI(messages, system)
         
-        Formatter->>Formatter: 1. Create System Message
+        Formatter->>Formatter: 1. Create System Message (if exists)
         Formatter->>Formatter: 2. Index Tool Results (create map)
         
         loop For each message in messages
@@ -63,6 +66,8 @@ sequenceDiagram
                 Formatter->>Formatter: Push { role: 'user', content: [{ type: 'image_url', ... }] }
             else User Message (Media - File)
                 Formatter->>Formatter: Push { role: 'user', content: [{ type: 'file', ... }] }
+            else Assistant Message (Text)
+                Formatter->>Formatter: Push { role: 'assistant', content: string }
             else Assistant Message (Tool Use)
                 Formatter->>Formatter: Push { role: 'assistant', tool_calls: [...] }
                 Formatter->>Formatter: **IMMEDIATELY** Push { role: 'tool', tool_call_id, content... }
@@ -74,7 +79,7 @@ sequenceDiagram
     end
 
     rect rgb(200, 240, 240)
-        Note over Integration,OpenAI: API Prep & Invocation
+        Note over Integration,OpenAI: API Prep & Configuration
         
         loop For each tool in tools
             Integration->>Integration: Map to ChatCompletionTool (JSON Schema)
@@ -85,42 +90,129 @@ sequenceDiagram
             Note over Integration: response_format = {<br/>  type: 'json_schema',<br/>  json_schema: { schema: zodToJsonSchema(...) }<br/>}
         end
         
-        Integration->>OpenAI: chat.completions.create({...})
-        OpenAI-->>Integration: ChatCompletion Response
+        Integration->>Integration: Prepare baseParams
+        Note over Integration: {<br/>  ...llmChatCompletionParams,<br/>  tools, messages,<br/>  response_format,<br/>  stream_options (if streaming)<br/>}
+    end
+    
+    alt enableStreaming === true
+        rect rgb(255, 240, 200)
+            Note over Integration,Stream: Streaming Mode
+            
+            Integration->>Stream: streamableOpenAI(client, { ...baseParams, stream: true })
+            Stream->>Stream: Get otelHeaders from span
+            Stream->>OpenAI: chat.completions.create({ stream: true })
+            OpenAI-->>Stream: Stream<ChatCompletionChunk>
+            
+            loop For each chunk in stream
+                alt chunk has usage data
+                    Stream->>Stream: Accumulate inputTokens & outputTokens
+                end
+                
+                alt chunk.delta.content exists
+                    Stream->>Stream: finalResponse += chunk.delta.content
+                    Stream->>Agent: onStream({ type: 'agent.llm.delta.text', data: {...} })
+                    Note over Stream,Agent: Streams text delta with:<br/>- content, delta<br/>- token usage<br/>- otel headers
+                end
+                
+                alt chunk.delta.tool_calls exists
+                    loop For each tool_call delta
+                        Stream->>Stream: Build/update toolCallsMap[index]
+                        alt toolCall.function.name exists
+                            Stream->>Agent: onStream({ type: 'agent.llm.delta.tool', data: {...} })
+                            Note over Stream,Agent: Streams tool preparation with:<br/>- toolname, toolUseId, input<br/>- token usage<br/>- otel headers
+                        end
+                        alt toolCall.function.arguments exists
+                            Stream->>Stream: existingCall.arguments += arguments
+                            Stream->>Agent: onStream({ type: 'agent.llm.delta.tool', data: {...} })
+                        end
+                    end
+                end
+                
+                alt chunk.finish_reason exists
+                    Stream->>Stream: finishReason = chunk.finish_reason
+                    Stream->>Agent: onStream({ type: 'agent.llm.delta', data: { finishReason, ... } })
+                end
+            end
+            
+            loop Parse accumulated tool calls
+                alt JSON.parse succeeds
+                    Stream->>Stream: Add to toolRequests[]
+                else JSON.parse fails
+                    Stream->>Agent: onStream({ type: 'agent.llm.delta.tool', data: { error, ... } })
+                    Stream->>Otel: logToSpan('WARNING', 'Failed to parse...')
+                end
+            end
+            
+            alt finishReason === 'length'
+                Stream->>Otel: logToSpan('WARNING', 'Max token limit reached')
+                Stream->>Stream: Append truncation message
+            end
+            
+            alt finishReason === 'content_filter'
+                Stream->>Otel: logToSpan('WARNING', 'Content filtered')
+                Stream->>Stream: Append filter message
+            end
+            
+            Stream-->>Integration: LLMExecutionResult
+        end
+    else enableStreaming === false
+        rect rgb(200, 255, 240)
+            Note over Integration,NonStream: Non-Streaming Mode
+            
+            Integration->>NonStream: nonStreamableOpenAI(client, { ...baseParams, stream: false })
+            NonStream->>OpenAI: chat.completions.create({ stream: false })
+            OpenAI-->>NonStream: ChatCompletion Response
+            
+            NonStream->>NonStream: Extract usage tokens
+            
+            alt choice.message.tool_calls exists
+                loop For each tool_call
+                    alt JSON.parse succeeds
+                        NonStream->>NonStream: Add to toolRequests[]
+                    else JSON.parse fails
+                        NonStream->>Otel: logToSpan('WARNING', 'Failed to parse...')
+                    end
+                end
+            end
+            
+            alt choice.finish_reason === 'length'
+                NonStream->>Otel: logToSpan('WARNING', 'Max token limit reached')
+                NonStream->>NonStream: Append truncation message
+            end
+            
+            alt choice.finish_reason === 'content_filter'
+                NonStream->>Otel: logToSpan('WARNING', 'Content filtered')
+                NonStream->>NonStream: Append filter message
+            end
+            
+            NonStream-->>Integration: LLMExecutionResult
+        end
     end
     
     rect rgb(200, 240, 200)
         Note over Integration,Parser: Response Processing & Telemetry
         
-        Integration->>Integration: Calculate Usage
-        Note over Integration: ExecutionUnits =<br/>config.executionunits(prompt, completion)
+        Integration->>Integration: Calculate executionUnits
+        Note over Integration: executionUnits =<br/>config.executionunits(prompt, completion)<br/>?? (prompt + completion)
         
         Integration->>Otel: setOpenInferenceUsageOutputAttr(usage)
         
-        alt Response has tool_calls
-            loop For each tool_call
-                Parser->>Parser: Parse arguments (JSON.parse)
-            end
-            Parser->>Otel: setOpenInferenceToolCallOutputAttr({ toolCalls })
-            Parser-->>Integration: Return { type: 'tool_call', ... }
+        alt result.toolRequests exists and length > 0
+            Integration->>Otel: setOpenInferenceToolCallOutputAttr({ toolCalls })
+            Integration-->>Agent: Return { type: 'tool_call', toolRequests, usage, executionUnits }
             
-        else Response is Content
-            Parser->>Parser: Check finish_reason
-            alt length or content_filter
-                Parser->>Parser: Append warning to content string
-            end
-            
-            Parser->>Otel: setOpenInferenceResponseOutputAttr({ response })
+        else result.response exists
+            Integration->>Integration: content = result.response || ''
+            Integration->>Otel: setOpenInferenceResponseOutputAttr({ response: content })
             
             alt outputFormat.type === 'json'
-                Parser->>Parser: tryParseJson(content)
-                Parser-->>Integration: Return { type: 'json', ... }
+                Integration->>Parser: tryParseJson(content)
+                Integration-->>Agent: Return { type: 'json', content, parsedContent, usage, executionUnits }
             else outputFormat.type === 'text'
-                Parser-->>Integration: Return { type: 'text', ... }
+                Integration-->>Agent: Return { type: 'text', content, usage, executionUnits }
             end
         end
     end
     
     Integration->>Otel: span.end()
-    Integration-->>Agent: AgentLLMIntegrationOutput
 ```

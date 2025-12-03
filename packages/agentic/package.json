@@ -47,7 +47,8 @@
     "zod-to-json-schema": "3.25.0"
   },
   "devDependencies": {
-    "@types/node": "24.10.1"
+    "@types/node": "24.10.1",
+    "vitest": "^4.0.13"
   },
   "engines": {
     "node": ">=18.0.0"

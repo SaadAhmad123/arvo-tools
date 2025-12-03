@@ -159,3 +159,9 @@ export type CommonIntegrationConfig = {
     system: string | null;
   }>;
 };
+
+export type LLMExecutionResult = {
+  toolRequests: Omit<AgentToolCallContent, 'type'>[] | null;
+  response: string | null;
+  usage: NonNullable<AgentLLMIntegrationOutput['usage']>;
+};
