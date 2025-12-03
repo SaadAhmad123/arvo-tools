@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.4
+
+### Patch Changes
+
+- a14ef38: Added deep streaming ability in llm integrations along side agents
+
 ## 1.2.3
 
 ### Patch Changes
