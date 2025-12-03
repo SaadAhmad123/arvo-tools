@@ -6,7 +6,6 @@ import {
 import { SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry, exceptionToSpan } from 'arvo-core';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { AgentMessage, AgentToolCallContent } from '../../Agent/types';
 import {
   setOpenInferenceInputAttr,
   setOpenInferenceResponseOutputAttr,
@@ -14,8 +13,11 @@ import {
   setOpenInferenceUsageOutputAttr,
   tryParseJson,
 } from '../../Agent/utils';
+import { defaultContextTransformer } from '../defaultContextTransformer';
 import { DEFAULT_TOOL_LIMIT_PROMPT, jsonPrompt } from '../prompts';
-import type { AgentLLMIntegration, AgentLLMIntegrationOutput } from '../types';
+import type { AgentLLMIntegration, AgentLLMIntegrationOutput, LLMExecutionResult } from '../types';
+import { nonStreamableAnthropic } from './nonstreamable';
+import { streamableAnthropic } from './streamable';
 import type { AnthropicLlmIntegrationConfig } from './types';
 import { formatMessagesForAnthropic } from './utils';
 
@@ -41,7 +43,15 @@ import { formatMessagesForAnthropic } from './utils';
 export const anthropicLLMIntegration =
   (client: Anthropic, config?: AnthropicLlmIntegrationConfig): AgentLLMIntegration =>
   async (
-    { messages: _messages, system: _system, tools, outputFormat, lifecycle, toolInteractions },
+    {
+      messages: _messages,
+      system: _system,
+      tools,
+      outputFormat,
+      lifecycle,
+      toolInteractions,
+      onStream,
+    },
     { otelInfo },
   ) =>
     await ArvoOpenTelemetry.getInstance().startActiveSpan({
@@ -57,32 +67,18 @@ export const anthropicLLMIntegration =
         },
       },
       fn: async (span): Promise<AgentLLMIntegrationOutput> => {
-        const messageCreateParams: AnthropicLlmIntegrationConfig['invocationParam'] =
-          config?.invocationParam ?? {
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 4096,
-            temperature: 0,
-          };
+        const messageCreateParams: Required<AnthropicLlmIntegrationConfig['invocationParam']> = {
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4096,
+          temperature: 0,
+          stream: true,
+          ...(config?.invocationParam ?? {}),
+        };
 
-        let { messages, system } = (await config?.contextTransformer?.({
+        let { messages, system } = await (config?.contextTransformer ?? defaultContextTransformer)({
           messages: _messages,
           system: _system,
-        })) ?? {
-          messages: _messages.map((item) => {
-            if (item.content.type === 'media' && item.seenCount > 0) {
-              return {
-                role: item.role,
-                content: {
-                  type: 'text',
-                  content: `Media file (type: ${item.content.contentType.type}@${item.content.contentType.format}) already parsed and looked at. No need for you to look at it again`,
-                },
-                seenCount: item.seenCount,
-              };
-            }
-            return item;
-          }) as AgentMessage[],
-          system: _system,
-        };
+        });
 
         if (toolInteractions.exhausted) {
           const limitMessage =
@@ -98,7 +94,6 @@ export const anthropicLLMIntegration =
           system = `${system}\n\n${limitMessage}`;
         }
 
-        // For JSON output format, append schema instructions to the system prompt
         if (outputFormat.type === 'json') {
           // biome-ignore lint/suspicious/noExplicitAny: Make the typescript compiler ignore
           const jsonSchema = zodToJsonSchema(outputFormat.format as any);
@@ -133,74 +128,62 @@ export const anthropicLLMIntegration =
 
           const formattedMessages = formatMessagesForAnthropic(messages);
 
-          const response = await client.messages.create({
-            ...messageCreateParams,
-            system: system ?? undefined,
-            tools: toolDef.length ? toolDef : undefined,
-            messages: formattedMessages,
-          });
+          const enableStreaming = config?.invocationParam?.stream ?? false;
 
-          const llmUsage: NonNullable<AgentLLMIntegrationOutput['usage']> = {
-            tokens: {
-              prompt: response.usage.input_tokens,
-              completion: response.usage.output_tokens,
-            },
-          };
+          let result: LLMExecutionResult;
+
+          if (enableStreaming) {
+            result = await streamableAnthropic(
+              client,
+              {
+                ...messageCreateParams,
+                stream: true,
+                system: system ?? undefined,
+                tools: toolDef.length ? toolDef : undefined,
+                messages: formattedMessages,
+              },
+              { span, onStream },
+            );
+          } else {
+            result = await nonStreamableAnthropic(
+              client,
+              {
+                ...messageCreateParams,
+                stream: false,
+                system: system ?? undefined,
+                tools: toolDef.length ? toolDef : undefined,
+                messages: formattedMessages,
+              },
+              { span },
+            );
+          }
+
+          const llmUsage = result.usage;
           const executionUnits =
             config?.executionunits?.(llmUsage.tokens.prompt, llmUsage.tokens.completion) ??
             llmUsage.tokens.prompt + llmUsage.tokens.completion;
 
           setOpenInferenceUsageOutputAttr(llmUsage, span);
 
-          // Check for tool use in response
-          const toolUseBlocks = response.content.filter(
-            (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
-          );
-
-          if (toolUseBlocks.length > 0) {
-            const toolRequests: Omit<AgentToolCallContent, 'type'>[] = [];
-            for (const toolCall of toolUseBlocks) {
-              try {
-                toolRequests.push({
-                  toolUseId: toolCall.id,
-                  name: toolCall.name,
-                  input: toolCall.input as Record<string, unknown>,
-                });
-              } catch (err) {
-                exceptionToSpan(err as Error, span);
-              }
-            }
-
-            if (toolRequests.length) {
-              setOpenInferenceToolCallOutputAttr({ toolCalls: toolRequests }, span);
-              return {
-                type: 'tool_call',
-                toolRequests,
-                usage: llmUsage,
-                executionUnits,
-              };
-            }
+          if (result.toolRequests && result.toolRequests.length > 0) {
+            setOpenInferenceToolCallOutputAttr({ toolCalls: result.toolRequests }, span);
+            return {
+              type: 'tool_call',
+              toolRequests: result.toolRequests,
+              usage: llmUsage,
+              executionUnits,
+            };
           }
 
-          // Extract text content from response
-          const textBlocks = response.content.filter(
-            (block): block is Anthropic.TextBlock => block.type === 'text',
-          );
-          let content = textBlocks.map((block) => block.text).join('');
-
-          // Handle stop reasons
-          if (response.stop_reason === 'max_tokens') {
-            content = `${content} [Max response token limit (<= ${messageCreateParams.max_tokens}) reached]`;
-            throw new Error(`Agent reached max token limit. The partial response is "${content}"`);
-          }
+          const content = result.response || '';
 
           setOpenInferenceResponseOutputAttr({ response: content }, span);
 
           if (outputFormat.type === 'json') {
             return {
               type: 'json',
-              content: content || '{}',
-              parsedContent: tryParseJson(content || '{}'),
+              content: content || '',
+              parsedContent: tryParseJson(content || ''),
               usage: llmUsage,
               executionUnits,
             };
@@ -214,6 +197,7 @@ export const anthropicLLMIntegration =
           };
         } catch (e) {
           span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error)?.message });
+          exceptionToSpan(e as Error, span);
           throw e;
         } finally {
           span.end();

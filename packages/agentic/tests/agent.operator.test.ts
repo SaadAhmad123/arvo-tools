@@ -98,7 +98,6 @@ const tests: ArvoTestSuite = {
         },
       ],
     },
-
     {
       name: 'should read the attachments and perform action',
       steps: [

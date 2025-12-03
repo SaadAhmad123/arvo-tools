@@ -76,8 +76,58 @@ export const AgentStreamEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('agent.llm.delta'),
     data: z.object({
-      delta: z.string(),
+      finishReason: z.string().nullable(),
+      comment: z.string(),
+      meta: z.object({
+        error: z.string().nullable(),
+        token: z.object({
+          prompt: z.number(),
+          completion: z.number(),
+        }),
+        otel: z.object({
+          traceparent: z.string().nullable(),
+          tracestate: z.string().nullable(),
+        }),
+      }),
+    }),
+  }),
+  z.object({
+    type: z.literal('agent.llm.delta.text'),
+    data: z.object({
+      delta: z.string().nullable(),
       content: z.string(),
+      comment: z.string(),
+      meta: z.object({
+        error: z.string().nullable(),
+        token: z.object({
+          prompt: z.number(),
+          completion: z.number(),
+        }),
+        otel: z.object({
+          traceparent: z.string().nullable(),
+          tracestate: z.string().nullable(),
+        }),
+      }),
+    }),
+  }),
+  z.object({
+    type: z.literal('agent.llm.delta.tool'),
+    data: z.object({
+      comment: z.string(),
+      toolname: z.string(),
+      toolUseId: z.string(),
+      input: z.string(),
+      meta: z.object({
+        error: z.string().nullable(),
+        token: z.object({
+          prompt: z.number(),
+          completion: z.number(),
+        }),
+        otel: z.object({
+          traceparent: z.string().nullable(),
+          tracestate: z.string().nullable(),
+        }),
+      }),
     }),
   }),
   z.object({

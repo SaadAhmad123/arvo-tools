@@ -97,8 +97,8 @@ const tests: ArvoTestSuite = {
               source: TEST_EVENT_SOURCE,
               data: {
                 message: cleanString(`
-                  What is x in 2x+5=67. Also in parallel can you help me get start on Astro. 
-                  Before executing the tools present the whole plan via human review tool and 
+                  What is x in 2x+5=67. Also in parallel can you help me get start on Astro.
+                  Before executing the tools present the whole plan via human review tool and
                   await approval. You are banned from execution any tools before human review tool
                 `),
                 parentSubject$$: null,

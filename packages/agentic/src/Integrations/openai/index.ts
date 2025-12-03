@@ -7,9 +7,7 @@ import { ArvoOpenTelemetry, exceptionToSpan } from 'arvo-core';
 import type OpenAI from 'openai';
 import type { AzureOpenAI } from 'openai';
 import type { ChatCompletionTool } from 'openai/resources/index.mjs';
-import type { ChatCompletionMessageFunctionToolCall } from 'openai/resources.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import type { AgentMessage, AgentToolCallContent } from '../../Agent/types';
 import {
   setOpenInferenceInputAttr,
   setOpenInferenceResponseOutputAttr,
@@ -17,8 +15,11 @@ import {
   setOpenInferenceUsageOutputAttr,
   tryParseJson,
 } from '../../Agent/utils';
+import { defaultContextTransformer } from '../defaultContextTransformer';
 import { DEFAULT_TOOL_LIMIT_PROMPT } from '../prompts';
-import type { AgentLLMIntegration, AgentLLMIntegrationOutput } from '../types';
+import type { AgentLLMIntegration, AgentLLMIntegrationOutput, LLMExecutionResult } from '../types';
+import { nonStreamableOpenAI } from './nonstreamable';
+import { streamableOpenAI } from './streamable';
 import type { OpenAILlmIntegrationConfig } from './types';
 import { formatMessagesForOpenAI } from './utils';
 
@@ -43,7 +44,15 @@ export const openaiLLMIntegration =
     config?: OpenAILlmIntegrationConfig<TClient>,
   ): AgentLLMIntegration =>
   async (
-    { messages: _messages, system: _system, tools, outputFormat, lifecycle, toolInteractions },
+    {
+      messages: _messages,
+      system: _system,
+      tools,
+      outputFormat,
+      lifecycle,
+      toolInteractions,
+      onStream,
+    },
     { otelInfo },
   ) =>
     await ArvoOpenTelemetry.getInstance().startActiveSpan({
@@ -59,32 +68,20 @@ export const openaiLLMIntegration =
         },
       },
       fn: async (span): Promise<AgentLLMIntegrationOutput> => {
-        const llmChatCompletionParams: OpenAILlmIntegrationConfig<TClient>['invocationParam'] =
-          config?.invocationParam ?? {
-            model: 'gpt-4o',
-            max_completion_tokens: 4096,
-            temperature: 0,
-          };
+        const llmChatCompletionParams: Required<
+          OpenAILlmIntegrationConfig<TClient>['invocationParam']
+        > = {
+          model: 'gpt-4o',
+          max_completion_tokens: 4096,
+          temperature: 0,
+          stream: true,
+          ...(config?.invocationParam ?? {}),
+        };
 
-        let { messages, system } = (await config?.contextTransformer?.({
+        let { messages, system } = await (config?.contextTransformer ?? defaultContextTransformer)({
           messages: _messages,
           system: _system,
-        })) ?? {
-          messages: _messages.map((item) => {
-            if (item.content.type === 'media' && item.seenCount > 0) {
-              return {
-                role: item.role,
-                content: {
-                  type: 'text',
-                  content: `Media file (type: ${item.content.contentType.type}@${item.content.contentType.format}) already parsed and looked at. No need for you to look at it again`,
-                },
-                seenCount: item.seenCount,
-              };
-            }
-            return item;
-          }) as AgentMessage[],
-          system: _system,
-        };
+        });
 
         if (toolInteractions.exhausted) {
           const limitMessage =
@@ -139,67 +136,65 @@ export const openaiLLMIntegration =
                   json_schema: {
                     name: 'response_schema',
                     description: 'The required response schema',
-                    // biome-ignore lint/suspicious/noExplicitAny: Make the typescript compiler ignore. Otherwise, it emits error "Type instantiation is excessively deep and possibly infinite. ts(2589)"
+                    // biome-ignore lint/suspicious/noExplicitAny: Make the typescript compiler ignore
                     schema: zodToJsonSchema(outputFormat.format as any),
                   },
                 }
               : undefined;
 
-          const completion = await client.chat.completions.create({
+          const enableStreaming = config?.invocationParam?.stream ?? false;
+
+          const baseParams = {
             ...llmChatCompletionParams,
             tools: toolDef.length ? toolDef : undefined,
             messages: formattedMessages,
             response_format: responseFormat,
-          });
-
-          const choice = completion.choices[0];
-          const llmUsage: NonNullable<AgentLLMIntegrationOutput['usage']> = {
-            tokens: {
-              prompt: completion.usage?.prompt_tokens ?? 0,
-              completion: completion.usage?.completion_tokens ?? 0,
-            },
+            stream_options: enableStreaming ? { include_usage: true } : undefined,
           };
+
+          let result: LLMExecutionResult;
+
+          if (enableStreaming) {
+            result = await streamableOpenAI(
+              client,
+              {
+                ...baseParams,
+                stream: true,
+              },
+              { span, onStream },
+            );
+          } else {
+            result = await nonStreamableOpenAI(
+              client,
+              {
+                ...baseParams,
+                stream: false,
+              },
+              { span },
+            );
+          }
+
+          const llmUsage = result.usage;
           const executionUnits =
             config?.executionunits?.(llmUsage.tokens.prompt, llmUsage.tokens.completion) ??
             llmUsage.tokens.prompt + llmUsage.tokens.completion;
 
           setOpenInferenceUsageOutputAttr(llmUsage, span);
 
-          if (choice?.message?.tool_calls) {
-            const toolRequests: Omit<AgentToolCallContent, 'type'>[] = [];
-            for (const toolCall of choice.message
-              .tool_calls as ChatCompletionMessageFunctionToolCall[]) {
-              try {
-                toolRequests.push({
-                  toolUseId: toolCall.id,
-                  name: toolCall.function.name,
-                  input: JSON.parse(toolCall.function.arguments) as Record<string, unknown>,
-                });
-              } catch (err) {
-                exceptionToSpan(err as Error, span);
-              }
-            }
-
-            if (toolRequests.length) {
-              setOpenInferenceToolCallOutputAttr({ toolCalls: toolRequests }, span);
-              return {
-                type: 'tool_call',
-                toolRequests,
-                usage: llmUsage,
-                executionUnits,
-              };
-            }
+          if (result.toolRequests && result.toolRequests.length > 0) {
+            setOpenInferenceToolCallOutputAttr({ toolCalls: result.toolRequests }, span);
+            return {
+              type: 'tool_call',
+              toolRequests: result.toolRequests,
+              usage: llmUsage,
+              executionUnits,
+            };
           }
 
-          let content = choice?.message?.content ?? '';
-          if (choice.finish_reason === 'length') {
-            content = `${content} [Max response token limit (<= ${llmChatCompletionParams.max_tokens ?? llmChatCompletionParams.max_completion_tokens}) reached]`;
-            throw new Error(`Agent reached max token limit. The partial response is "${content}"`);
-          }
-          if (choice.finish_reason === 'content_filter') {
-            content = `${content} [Request blocked due to OpenAI content filtering policies]`;
-          }
+          const content = result.response || '';
+
           setOpenInferenceResponseOutputAttr({ response: content }, span);
+
           if (outputFormat.type === 'json') {
             return {
               type: 'json',
@@ -218,6 +213,7 @@ export const openaiLLMIntegration =
           };
         } catch (e) {
           span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error)?.message });
+          exceptionToSpan(e as Error, span);
           throw e;
         } finally {
           span.end();

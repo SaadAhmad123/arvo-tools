@@ -13,8 +13,10 @@ export type AnthropicLlmIntegrationConfig = {
    * @default
    * { model: 'claude-sonnet-4-20250514', max_tokens: 4096, temperature: 0 }
    */
-  invocationParam?: Pick<
-    Anthropic.MessageCreateParamsNonStreaming,
-    'model' | 'temperature' | 'max_tokens'
+  invocationParam?: Partial<
+    Pick<
+      Anthropic.MessageCreateParamsNonStreaming | Anthropic.MessageCreateParamsStreaming,
+      'model' | 'temperature' | 'max_tokens' | 'stream'
+    >
   >;
 } & CommonIntegrationConfig;

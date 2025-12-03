@@ -9,7 +9,7 @@ export {
   AgentToolResultContentSchema,
 } from './Agent/schema';
 export { AgentStreamEventSchema } from './Agent/stream/schema';
-export { AgentStreamListener } from './Agent/stream/types';
+export type { AgentStreamListener } from './Agent/stream/types';
 export type {
   AgentContextBuilder,
   AgentLLMContext,

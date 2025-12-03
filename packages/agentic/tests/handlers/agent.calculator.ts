@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { cleanString, createArvoOrchestratorContract } from 'arvo-core';
 import { ArvoDomain, type EventHandlerFactory, type IMachineMemory } from 'arvo-event-handler';
 import * as dotenv from 'dotenv';
@@ -5,6 +6,7 @@ import { OpenAI } from 'openai';
 import z from 'zod';
 import {
   AgentDefaults,
+  anthropicLLMIntegration,
   createAgentTool,
   createArvoAgent,
   MCPClient,
@@ -85,6 +87,17 @@ export const calculatorAgent: EventHandlerFactory<{
     }),
     llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
     memory,
+    onStream: async ({ type, data }) => {
+      if (
+        !(
+          type === 'agent.llm.delta.tool' ||
+          type === 'agent.llm.delta.text' ||
+          type === 'agent.llm.delta'
+        )
+      )
+        return;
+      console.log(JSON.stringify({ type, data }, null, 2));
+    },
     permissionManager: new SimplePermissionManager({ domains: [HUMAN_INTERACTION_DOMAIN] }),
     handler: {
       '1.0.0': {
@@ -110,7 +123,9 @@ export const calculatorAgent: EventHandlerFactory<{
       },
       '2.0.0': {
         llmResponseType: 'json',
-        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
+        llm: anthropicLLMIntegration(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }), {
+          invocationParam: { stream: true },
+        }),
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
