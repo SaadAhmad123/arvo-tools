@@ -1,6 +1,6 @@
 services:
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.10.0
     container_name: jaeger
     environment:
       - COLLECTOR_OTLP_ENABLED=true
