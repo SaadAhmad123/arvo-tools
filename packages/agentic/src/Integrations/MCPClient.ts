@@ -13,6 +13,16 @@ import {
 import type { IMCPClient } from '../interfaces.mcp.js';
 import type { OtelInfoType } from '../types.js';
 
+export type MCPClientParam = {
+  url: string;
+  toolPriority?: Record<string, number>;
+  requestInit?: RequestInit;
+  clientConfig?: {
+    name?: string;
+    version?: string;
+  };
+};
+
 /**
  * A Production-grade Client for the Model Context Protocol (MCP).
  *
@@ -33,10 +43,10 @@ import type { OtelInfoType } from '../types.js';
  * @example
  * ```ts
  * const mcp = new MCPClient({
- *   url: 'http://localhost:8080/sse',
- *   // Give the 'delete_file' tool high priority so it executes before other tools
+ *   url: 'http://localhost:8080/mcp',
+ *   // Give the 'check_files' tool high priority so it executes before other tools
  *   toolPriority: {
- *     'delete_file': 100
+ *     'check_files': 1
  *   }
  * });
  * ```
@@ -48,6 +58,7 @@ export class MCPClient implements IMCPClient {
   private readonly url: () => string;
   private readonly requestInit: () => RequestInit;
   private readonly toolPriority: () => Record<string, number>;
+  private readonly clientConfig: () => Required<NonNullable<MCPClientParam['clientConfig']>>;
 
   /**
    * Creates a new MCP Client.
@@ -59,17 +70,18 @@ export class MCPClient implements IMCPClient {
    * need to be resolved at **Runtime** (e.g., fetched from a Secrets Manager or Env Var)
    * rather than at **Instantiation time**.
    */
-  constructor(
-    param:
-      | { url: string; toolPriority?: Record<string, number>; requestInit?: RequestInit }
-      | (() => { url: string; toolPriority?: Record<string, number>; requestInit?: RequestInit }),
-  ) {
+  constructor(param: MCPClientParam | (() => MCPClientParam)) {
     this.client = null;
     this.isConnected = false;
     this.availableTools = [];
     this.url = () => (typeof param === 'function' ? param() : param).url;
     this.requestInit = () => (typeof param === 'function' ? param() : param).requestInit ?? {};
     this.toolPriority = () => (typeof param === 'function' ? param() : param).toolPriority ?? {};
+    this.clientConfig = () => ({
+      name: 'arvo-tools-agentic-mcp-client',
+      version: '1.0.0',
+      ...(typeof param === 'function' ? param() : param).clientConfig,
+    });
   }
 
   /**
@@ -92,8 +104,8 @@ export class MCPClient implements IMCPClient {
         : new SSEClientTransport(new URL(url), { requestInit });
 
       this.client = new Client({
-        name: 'arvo-tools-agentic-mcp-client',
-        version: '1.0.0',
+        name: this.clientConfig().name,
+        version: this.clientConfig().version,
       });
 
       await this.client.connect(transport);

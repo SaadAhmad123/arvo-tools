@@ -35,13 +35,13 @@
     "access": "public"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.71.0",
+    "@anthropic-ai/sdk": "0.71.2",
     "@arizeai/openinference-semantic-conventions": "2.1.2",
-    "@modelcontextprotocol/sdk": "1.22.0",
+    "@modelcontextprotocol/sdk": "1.24.3",
     "@opentelemetry/api": "1.9.0",
     "arvo-core": "3.0.25",
     "arvo-event-handler": "3.0.25",
-    "openai": "6.9.1",
+    "openai": "6.10.0",
     "uuid": "11.1.0",
     "zod": "3.25.74",
     "zod-to-json-schema": "3.25.0"
