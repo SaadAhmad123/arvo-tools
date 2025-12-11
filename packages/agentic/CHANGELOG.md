@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.6
+
+### Patch Changes
+
+- 9a3679a: Update MCP version to cover the vulnerability
+
 ## 1.2.5
 
 ### Patch Changes
