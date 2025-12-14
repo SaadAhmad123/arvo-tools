@@ -303,6 +303,8 @@ export const createArvoAgent = <
                 };
               }
 
+              await permissionManager?.cleanup?.(permissionManagerContext, { otelInfo });
+
               return {
                 context: resumableContextToPersist,
                 output: {
@@ -429,6 +431,8 @@ export const createArvoAgent = <
               };
             }
 
+            await permissionManager?.cleanup?.(permissionManagerContext, { otelInfo });
+
             return {
               context: resumableContextToPersist,
               output: {
@@ -436,6 +440,21 @@ export const createArvoAgent = <
                 ...response.output,
               },
             };
+          } catch (e) {
+            // Add correct otelinfo object here
+            await permissionManager?.cleanup?.(
+              {
+                subject: context?.currentSubject ?? input?.subject ?? service?.subject ?? 'unknown',
+                accesscontrol:
+                  context?.initEventAccessControl ??
+                  input?.accesscontrol ??
+                  service?.accesscontrol ??
+                  null,
+                name: contracts.self.type,
+              },
+              { otelInfo },
+            );
+            throw e;
           } finally {
             await mcp?.disconnect({ otelInfo })?.catch(console.error);
           }

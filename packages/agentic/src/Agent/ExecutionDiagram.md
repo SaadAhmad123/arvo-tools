@@ -243,8 +243,15 @@ sequenceDiagram
                         CoreLoop->>Otel: End span
                         CoreLoop-->>Agent: { messages, output: validatedData, toolInteractions, executionUnits }
                         
-                        Agent->>Agent: Build final AgentState
-                        Note over Agent: Messages persisted with final seenCount values
+                        rect rgb(255, 245, 230)
+                            Note over Agent,PermMgr: **Permission Cleanup (Terminal Success)**
+                            
+                            Agent->>Agent: Build final AgentState
+                            Note over Agent: Messages persisted with final seenCount values
+                            
+                            Agent->>PermMgr: cleanup(permissionManagerContext, { otelInfo })
+                            Note over PermMgr: **Workflow Completion Cleanup:**<br/>Release workflow-scoped permissions.<br/>Clear cached authorization state.<br/>Free memory resources.<br/><br/>**Warning:** If cleanup throws,<br/>agent execution fails despite<br/>successful LLM completion.
+                        end
                         
                         Agent->>Resumable: return { context: AgentState, output: { __executionunits, ...data } }
                         Note over Resumable: ArvoResumable emits<br/>completion event to broker
@@ -255,6 +262,14 @@ sequenceDiagram
         
         alt Tool interaction quota exhausted
             CoreLoop-->>Agent: throw Error('Tool calls exhausted max quota')
+            
+            rect rgb(255, 230, 230)
+                Note over Agent,PermMgr: **Permission Cleanup (Terminal Error)**
+                
+                Agent->>PermMgr: cleanup(permissionManagerContext, { otelInfo })
+                Note over PermMgr: **Error Path Cleanup:**<br/>Reconstruct permissionManagerContext from<br/>available sources (context/input/service).<br/>Release resources even on failure.<br/><br/>Cleanup errors are logged but don't<br/>suppress the original error.
+            end
+            
             Agent->>Resumable: Error propagates (system error event emitted)
         end
     end

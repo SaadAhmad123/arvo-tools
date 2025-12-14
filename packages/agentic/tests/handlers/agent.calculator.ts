@@ -9,12 +9,12 @@ import {
   anthropicLLMIntegration,
   createAgentTool,
   createArvoAgent,
+  type IPermissionManager,
   MCPClient,
   openaiLLMIntegration,
-  SimplePermissionManager,
 } from '../../src';
 import { calculatorContract } from './calculator.handler';
-import { HUMAN_INTERACTION_DOMAIN, humanReviewContract } from './contract.human.review';
+import { humanReviewContract } from './contract.human.review';
 
 dotenv.config({ path: '../../.env' });
 
@@ -52,7 +52,8 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
 
 export const calculatorAgent: EventHandlerFactory<{
   memory: IMachineMemory<Record<string, unknown>>;
-}> = ({ memory }) =>
+  permissionManager: IPermissionManager;
+}> = ({ memory, permissionManager }) =>
   createArvoAgent({
     contracts: {
       // Event driven / Async function call interface of the agent
@@ -98,7 +99,7 @@ export const calculatorAgent: EventHandlerFactory<{
         return;
       console.log(JSON.stringify({ type, data }, null, 2));
     },
-    permissionManager: new SimplePermissionManager({ domains: [HUMAN_INTERACTION_DOMAIN] }),
+    permissionManager,
     handler: {
       '1.0.0': {
         // Dynamic context building for the agent when it is initialised.

@@ -18,12 +18,15 @@ import { HUMAN_INTERACTION_DOMAIN, humanReviewContract } from './handlers/contra
 
 const TEST_EVENT_SOURCE = 'test.test.test';
 const memory = new SimpleMachineMemory();
+const permissionManager = new SimplePermissionManager({
+  domains: [HUMAN_INTERACTION_DOMAIN],
+});
 const tests: ArvoTestSuite = {
   config: {
     fn: async (event: ArvoEvent) => {
       let domainedEvent: ArvoEvent | null = null;
       const result = await createSimpleEventBroker(
-        [calculatorAgent({ memory }), calculatorHandler()],
+        [calculatorAgent({ memory, permissionManager }), calculatorHandler()],
         {
           onDomainedEvents: async ({ event }) => {
             domainedEvent = event;
@@ -47,8 +50,8 @@ const tests: ArvoTestSuite = {
                 message: cleanString(`
                   What is x in 2x+5=67. Also in parallel can you help me get start on Astro.
                   Before executing the tools present the whole plan via human review tool and
-                  await approval. You are banned from execution any tools before human review tool 
-                  Use only one human review tool call at max. 
+                  await approval. You are banned from execution any tools before human review tool
+                  Use only one human review tool call at max.
                 `),
                 parentSubject$$: null,
               },
@@ -154,6 +157,7 @@ const tests: ArvoTestSuite = {
             expect(events).toHaveLength(1);
             expect(events[0]?.type).toBe(calculatorAgentContract.metadata.completeEventType);
             expect(events[0]?.accesscontrol).toBe('xyz');
+            expect(Array.from(permissionManager.permissions.keys()).length).toBe(0);
             return true;
           },
         },
