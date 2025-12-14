@@ -40,10 +40,12 @@ export class SimplePermissionManager
   static readonly VERSIONED_CONTRACT = simplePermissionContract.version('1.0.0');
   public readonly contract = simplePermissionContract.version('1.0.0');
   public readonly domains: NonEmptyArray<string> | null;
-  private permissions = new Map<string, Record<string, boolean>>();
+  readonly permissions = new Map<string, Record<string, boolean>>();
+  readonly enableCleanUp: boolean = true;
 
-  constructor(config: { domains: NonEmptyArray<string> | null }) {
+  constructor(config: { domains: NonEmptyArray<string> | null; enableCleanUp?: boolean }) {
     this.domains = config.domains;
+    this.enableCleanUp = config.enableCleanUp ?? true;
   }
 
   private getKey(source: PermissionManagerContext): string {
@@ -160,6 +162,39 @@ export class SimplePermissionManager
           };
           span.setAttribute('tool.permission.request', JSON.stringify(request));
           return request;
+        } catch (error) {
+          exceptionToSpan(error as Error, span);
+          throw error;
+        } finally {
+          span.end();
+        }
+      },
+    });
+  }
+
+  async cleanup(
+    source: PermissionManagerContext,
+    config: { otelInfo: OtelInfoType },
+  ): Promise<void> {
+    if (!this.enableCleanUp) return;
+    return await ArvoOpenTelemetry.getInstance().startActiveSpan({
+      name: 'Permission.Cleanup',
+      disableSpanManagement: true,
+      context: {
+        inheritFrom: 'TRACE_HEADERS',
+        traceHeaders: config.otelInfo.headers,
+      },
+      spanOptions: {
+        attributes: {
+          [OpenInferenceSemanticConventions.OPENINFERENCE_SPAN_KIND]:
+            OpenInferenceSpanKind.GUARDRAIL,
+        },
+      },
+      fn: async (span) => {
+        try {
+          const key = this.getKey(source);
+          this.permissions.delete(key);
+          span.setAttribute('tool.permission.cleanup.key', key);
         } catch (error) {
           exceptionToSpan(error as Error, span);
           throw error;

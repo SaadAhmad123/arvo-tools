@@ -221,4 +221,26 @@ export interface IPermissionManager<
     >[],
     config: { otelInfo: OtelInfoType },
   ): PromiseAble<InferVersionedArvoContract<T>['accepts']['data']>;
+
+  /**
+   * Cleanup hook invoked when agent execution completes or fails.
+   *
+   * Called by ArvoAgent when the workflow reaches a terminal state, either through
+   * successful completion (output event emitted) or failure (error thrown or system
+   * error event emitted). This provides an opportunity to release resources, clear
+   * cached permissions, or perform cleanup operations scoped to the workflow execution.
+   *
+   * Common use cases include clearing workflow-specific permission cache entries to
+   * prevent memory leaks, marking permission requests as complete in external systems,
+   * or logging audit trails for compliance.
+   *
+   * **Important:** If cleanup throws an error during successful agent completion, the entire
+   * agent execution will fail and emit a system error event instead of the expected output.
+   * Implementations should handle internal errors gracefully or ensure cleanup operations
+   * are idempotent and unlikely to fail. For non-critical cleanup operations, consider
+   * catching and logging errors internally rather than propagating them.
+   *
+   * @param source - Context identifying the agent and workflow for cleanup
+   */
+  cleanup?(source: PermissionManagerContext, config: { otelInfo: OtelInfoType }): PromiseAble<void>;
 }
