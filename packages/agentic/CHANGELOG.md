@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.7
+
+### Patch Changes
+
+- cbd1dfe: Exported IPermissionManager interface and added a cleanup hook in the permission manager interface for permission data lifecycle management
+
 ## 1.2.6
 
 ### Patch Changes
