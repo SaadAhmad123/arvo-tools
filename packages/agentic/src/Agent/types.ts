@@ -243,7 +243,7 @@ export type AgentContextBuilder<
   /** The Otel span to add logs to */
   span: Span;
   // biome-ignore lint/suspicious/noConfusingVoidType: This is better for UX
-}) => PromiseLike<Partial<Pick<AgentLLMContext<TServiceContract>, 'messages' | 'system'>> | void>;
+}) => PromiseAble<Partial<Pick<AgentLLMContext<TServiceContract>, 'messages' | 'system'>> | void>;
 
 /**
  * The "Output Validation" Hook.
@@ -490,7 +490,7 @@ export type CreateArvoAgentParam<
        *
        * @example
        * ```typescript
-       * output: ({ content, parsedContent, outputFormat, span }) => {
+       * output: ({ type, content, parsedContent, outputFormat, span }) => {
        *   const result = outputFormat.safeParse(
        *     parsedContent ?? JSON.parse(content)
        *   );

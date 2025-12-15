@@ -52,7 +52,7 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
 
 export const calculatorAgent: EventHandlerFactory<{
   memory: IMachineMemory<Record<string, unknown>>;
-  permissionManager: IPermissionManager;
+  permissionManager?: IPermissionManager;
 }> = ({ memory, permissionManager }) =>
   createArvoAgent({
     contracts: {
