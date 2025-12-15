@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.8
+
+### Patch Changes
+
+- 96f47f6: Type bug fix for the context builder
+
 ## 1.2.7
 
 ### Patch Changes
