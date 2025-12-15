@@ -490,7 +490,7 @@ export type CreateArvoAgentParam<
        *
        * @example
        * ```typescript
-       * output: ({ content, parsedContent, outputFormat, span }) => {
+       * output: ({ type, content, parsedContent, outputFormat, span }) => {
        *   const result = outputFormat.safeParse(
        *     parsedContent ?? JSON.parse(content)
        *   );
