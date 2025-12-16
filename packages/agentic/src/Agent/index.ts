@@ -239,7 +239,7 @@ export const createArvoAgent = <
             const internalTools = generateAgentInternalToolDefinitions<TTools>(tools ?? {});
 
             const permissionPolicy: string[] =
-              (await handler[ver as ArvoSemanticVersion]?.explicityPermissionRequired?.({
+              (await handler[ver as ArvoSemanticVersion]?.explicitPermissionRequired?.({
                 services: serviceTools,
                 mcp: mcpTools,
                 tools: internalTools,
