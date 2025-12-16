@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.11
+
+### Patch Changes
+
+- e49410a: Enhanced permission manager internal logic to be more explicit
+
 ## 1.2.10
 
 ### Patch Changes
