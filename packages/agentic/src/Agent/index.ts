@@ -9,6 +9,7 @@ import {
   type ArvoResumableHandler,
   type ArvoResumableState,
   createArvoResumable,
+  SimpleMachineMemory,
 } from 'arvo-event-handler';
 import { v4 } from 'uuid';
 import type { AgentInternalTool } from '../AgentTool/types.js';
@@ -148,10 +149,10 @@ export const createArvoAgent = <
       self: contracts.self,
       services: {
         ...serviceContracts,
-        ...(permissionManager ? { [v4()]: permissionManager.contract } : {}),
+        ...(permissionManager ? { [`pm-${v4()}`]: permissionManager.contract } : {}),
       },
     },
-    memory,
+    memory: memory ?? new SimpleMachineMemory(),
     types: {
       context: {} as AgentState,
     },

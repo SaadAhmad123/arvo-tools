@@ -320,8 +320,12 @@ export type CreateArvoAgentParam<
    * they require a backend to persist the conversation history and interaction state.
    * - Dev: `SimpleMachineMemory` (In-Memory).
    * - Prod: Redis, PostgreSQL, DynamoDB implementation.
+   *
+   * @default SimpleMachineMemory - This is because an explicit memory backend
+   * is only needed with the Agent need to perform event-driven co-ordination becuase
+   * that creates a suspend-boundary
    */
-  memory: IMachineMemory<Record<string, unknown>>;
+  memory?: IMachineMemory<Record<string, unknown>>;
 
   /**
    * The maximum number of tool-execution loops allowed for a single user request.
