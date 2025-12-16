@@ -8,6 +8,7 @@ import {
 import {
   type ArvoResumableHandler,
   type ArvoResumableState,
+  ConfigViolation,
   createArvoResumable,
   SimpleMachineMemory,
 } from 'arvo-event-handler';
@@ -143,6 +144,31 @@ export const createArvoAgent = <
       .filter((item) => item.domains?.length)
       .map((item) => [item.contract.accepts.type, item.domains]),
   ) as Record<string, NonEmptyArray<string>>;
+
+  if ((Object.keys(serviceContracts).length > 0 || permissionManager) && !memory) {
+    // If permissions manager or service contracts are defined and
+    // memory is not defined then that is not allowed at by adding
+    // these it will automatically imply that sometime in its lifecycle,
+    // the Agent will need event-driven coordinations and will create a
+    // suspension boundary
+    throw new ConfigViolation(
+      cleanString(`
+          ArvoAgent<${contracts.self.type}> configuration error.
+
+          This agent is configured with capabilities that can introduce a suspension boundary
+          (service contracts and/or a permission manager), but no memory backend was provided.
+
+          Why this matters:
+          - Service contracts and permission workflows may cause the agent to emit an event and suspend.
+          - Suspending requires persisting conversation state so the agent can resume correctly.
+
+          How to fix:
+          - Provide a memory backend (e.g. SimpleMachineMemory or any implementation of IMachineMemory), or
+          - Remove service contracts and the permission manager if this agent is intended
+            to run as a single synchronous execution without suspension.
+        `),
+    );
+  }
 
   return createArvoResumable({
     contracts: {
