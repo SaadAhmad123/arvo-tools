@@ -2,11 +2,17 @@ import {
   SemanticConventions as OpenInferenceSemanticConventions,
   OpenInferenceSpanKind,
 } from '@arizeai/openinference-semantic-conventions';
-import { ArvoOpenTelemetry, exceptionToSpan, type VersionedArvoContract } from 'arvo-core';
+import {
+  ArvoOpenTelemetry,
+  exceptionToSpan,
+  type InferVersionedArvoContract,
+  type VersionedArvoContract,
+} from 'arvo-core';
 import type { AgentToolDefinition } from '../Agent/types';
 import type {
   IPermissionManager,
   PermissionManagerContext,
+  ToolAuthorizationState,
 } from '../interfaces.permission.manager';
 import type { NonEmptyArray, OtelInfoType } from '../types';
 import { simplePermissionContract } from './contract';
@@ -57,7 +63,7 @@ export class SimplePermissionManager
     // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
     tools: AgentToolDefinition<any>[],
     config: { otelInfo: OtelInfoType },
-  ): Promise<Record<string, boolean>> {
+  ): Promise<Record<string, ToolAuthorizationState>> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: 'Permission.Check',
       disableSpanManagement: true,
@@ -75,8 +81,15 @@ export class SimplePermissionManager
         try {
           const key = this.getKey(source);
           const granted = this.permissions.get(key) ?? {};
-          const result = Object.fromEntries(
-            tools.map((tool) => [tool.name, granted[tool.name] ?? false]),
+          const result: Record<string, ToolAuthorizationState> = Object.fromEntries(
+            tools.map((tool) => [
+              tool.name,
+              ((): ToolAuthorizationState => {
+                if (granted[tool.name] === true) return 'APPROVED';
+                if (granted[tool.name] === false) return 'DENIED';
+                return 'REQUESTABLE';
+              })(),
+            ]),
           );
           span.setAttribute('tool.permission.map', JSON.stringify(result));
           return result;
@@ -135,11 +148,11 @@ export class SimplePermissionManager
     // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
     tools: AgentToolDefinition<any>[],
     config: { otelInfo: OtelInfoType },
-  ): Promise<{
-    agentId: string;
-    requestedTools: string[];
-    reason: string;
-  }> {
+  ): Promise<
+    InferVersionedArvoContract<
+      VersionedArvoContract<typeof simplePermissionContract, '1.0.0'>
+    >['accepts']['data']
+  > {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: 'Permission.Request',
       disableSpanManagement: true,
@@ -158,7 +171,13 @@ export class SimplePermissionManager
           const request = {
             agentId: source.name,
             reason: `Agent ${source.name} is requesting permission to execute following tools`,
-            requestedTools: tools.map((t) => t.name),
+            requestedTools: Array.from(new Set(tools.map((t) => t.name))),
+            toolMetaData: Object.fromEntries(
+              tools.map((t) => [
+                t.name,
+                { name: t.name, originalName: t.serverConfig.name, kind: t.serverConfig.kind },
+              ]),
+            ),
           };
           span.setAttribute('tool.permission.request', JSON.stringify(request));
           return request;

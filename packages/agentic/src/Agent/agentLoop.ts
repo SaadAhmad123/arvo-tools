@@ -18,6 +18,7 @@ import type { IMCPClient } from '../interfaces.mcp.js';
 import type {
   IPermissionManager,
   PermissionManagerContext,
+  ToolAuthorizationState,
 } from '../interfaces.permission.manager.js';
 import type { OtelInfoType } from '../types.js';
 import type { AgentEventStreamer } from './stream/types.js';
@@ -162,13 +163,12 @@ export const agentLoop = async (
             const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
             const prioritizedToolCalls = prioritizeToolCalls(response.toolRequests, nameToToolMap);
 
-            const toolPermissionMap: Record<string, boolean> =
+            const toolPermissionMap: Record<string, ToolAuthorizationState> =
               (await param.permissionManager?.get(
                 param.permissionManagerContext,
                 prioritizedToolCalls
                   .filter((item) => param.permissionPolicy.includes(item.name))
-                  .map((item) => nameToToolMap[item.name])
-                  .filter(Boolean),
+                  .map((item) => nameToToolMap[item.name]),
                 { otelInfo },
               )) ?? {};
 
@@ -222,8 +222,59 @@ export const agentLoop = async (
                 continue;
               }
 
-              // Block tool call with no permission and build permission request
-              if (toolPermissionMap[item.name] === false) {
+              // Block tool call with explicit deny
+              if (toolPermissionMap[item.name] === 'DENIED') {
+                messages.push({
+                  role: 'user',
+                  content: {
+                    type: 'tool_result',
+                    toolUseId: item.toolUseId,
+                    content: cleanString(`
+                      [Critical] You don't have the permission to call this tool "${item.name}".
+                      You were explicitly denied from calling this tool by the authorization 
+                      system.
+                    `),
+                  },
+                  seenCount: 0,
+                });
+
+                logToSpan(
+                  {
+                    level: 'INFO',
+                    message: `Tool "${item.name}" permission denied`,
+                    tool: JSON.stringify({
+                      name: item.name,
+                      kind: resolvedToolDef.serverConfig.kind,
+                      originalName: resolvedToolDef.serverConfig.name,
+                      toolUseId: item.toolUseId,
+                    }),
+                    context: JSON.stringify({
+                      accessControl: param.permissionManagerContext.accesscontrol,
+                      agent: param.permissionManagerContext.name,
+                    }),
+                  },
+                  span,
+                );
+
+                param.onStream({
+                  type: 'agent.tool.permission.denied',
+                  data: {
+                    tools: [
+                      {
+                        name: item.name,
+                        kind: resolvedToolDef.serverConfig.kind,
+                        originalName: resolvedToolDef.serverConfig.name,
+                      },
+                    ],
+                    usage: tokenUsage,
+                    executionunits: executionUnits,
+                  },
+                });
+                continue;
+              }
+
+              // Block tool call and build permission request
+              if (toolPermissionMap[item.name] === 'REQUESTABLE') {
                 toolsPendingPermission.push(resolvedToolDef);
                 messages.push({
                   role: 'user',

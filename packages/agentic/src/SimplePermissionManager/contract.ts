@@ -14,6 +14,14 @@ export const simplePermissionContract = createSimpleArvoContract({
         agentId: z.string().describe('The agent requesting permission'),
         requestedTools: z.array(z.string()).describe('Tool names requiring authorization'),
         reason: z.string().describe('Explanation of why these tools are needed'),
+        toolMetaData: z.record(
+          z.string(),
+          z.object({
+            name: z.string(),
+            originalName: z.string(),
+            kind: z.string(),
+          }),
+        ),
       }),
       emits: z.object({
         commentary: z

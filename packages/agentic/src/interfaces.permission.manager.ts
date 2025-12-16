@@ -9,6 +9,14 @@ import type { AgentInternalTool } from './AgentTool/types';
 import type { NonEmptyArray, OtelInfoType, PromiseAble } from './types';
 
 /**
+ * Authorization state for agent tool execution.
+ *
+ * Defines three distinct permission states that control tool access and determine
+ * whether permission requests should be initiated for blocked tools.
+ */
+export type ToolAuthorizationState = 'DENIED' | 'APPROVED' | 'REQUESTABLE';
+
+/**
  * Contextual information identifying the agent and workflow requesting permission.
  *
  * Enables scoped authorization decisions where the same tool might be permitted
@@ -98,7 +106,10 @@ export type PermissionManagerContext = {
  *     const key = this.getKey(source);
  *     const granted = this.permissions.get(key) ?? new Set();
  *     return Object.fromEntries(
- *       tools.map(tool => [tool.name, granted.has(tool.name)])
+ *       tools.map(tool => [
+ *         tool.name,
+ *         granted.has(tool.name) ? 'APPROVED' : 'REQUESTABLE'
+ *       ])
  *     );
  *   }
  *
@@ -188,8 +199,9 @@ export interface IPermissionManager<
    * @param source - Context identifying the agent and workflow for permission lookup
    * @param tools - Tool definitions to check (uses agent-oriented names from `tool.name`)
    *
-   * @returns Map of tool names to authorization status where `true` permits execution
-   *          and `false` blocks execution requiring authorization
+   * @returns Map of tool names to authorization status where 'APPROVED' permits execution,
+   *          'DENIED' blocks execution without requesting permission, and 'REQUESTABLE'
+   *          blocks execution but triggers a permission request event
    */
   get(
     source: PermissionManagerContext,
@@ -198,7 +210,7 @@ export interface IPermissionManager<
       VersionedArvoContract<any, any> | AgentInternalTool | null
     >[],
     config: { otelInfo: OtelInfoType },
-  ): PromiseAble<Record<string, boolean>>;
+  ): PromiseAble<Record<string, ToolAuthorizationState>>;
 
   /**
    * Constructs permission request event payload for blocked tools.
