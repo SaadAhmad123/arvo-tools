@@ -386,7 +386,7 @@ export type CreateArvoAgentParam<
    *
    * The permission manager enforces security policies outside the LLM's reasoning,
    * preventing prompt injection attacks from bypassing authorization.
-   * This pattern is critical for systems requiring explicity permission policy implmentation,
+   * This pattern is critical for systems requiring explicit permission policy implmentation,
    * compliance enforcement, and defense against AI jailbreaking.
    */
   permissionManager?: IPermissionManager;
@@ -424,7 +424,7 @@ export type CreateArvoAgentParam<
        *
        * @example
        * ```typescript
-       * explicityPermissionRequired: async ({ services, tools, mcp }) => [
+       * explicitPermissionRequired: async ({ services, tools, mcp }) => [
        *   services.deleteUser.name,
        *   services.processRefund.name,
        *   tools.executeSQL.name,
@@ -432,7 +432,7 @@ export type CreateArvoAgentParam<
        * ]
        * ```
        */
-      explicityPermissionRequired?: (
+      explicitPermissionRequired?: (
         tools: AgentLLMContext<TServiceContract, TTools>['tools'],
       ) => PromiseAble<string[]>;
 

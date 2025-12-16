@@ -153,7 +153,7 @@ export const calculatorAgent: EventHandlerFactory<{
         },
       },
       '3.0.0': {
-        explicityPermissionRequired: ({ services, mcp }) => [
+        explicitPermissionRequired: ({ services, mcp }) => [
           services.calculator.name,
           mcp.search_astro_docs.name,
         ],
