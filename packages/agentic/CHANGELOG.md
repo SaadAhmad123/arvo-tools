@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.10
+
+### Patch Changes
+
+- 500d580: Fixed type in Agent Definition
+
 ## 1.2.9
 
 ### Patch Changes
