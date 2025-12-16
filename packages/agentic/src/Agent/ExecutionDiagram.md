@@ -131,8 +131,8 @@ sequenceDiagram
                     
                     alt Tools requiring permission exist
                         CoreLoop->>PermMgr: get(permissionManagerContext, toolDefinitions)
-                        Note over PermMgr: **Permission Check:**<br/>Queries internal state for each tool.<br/>Returns { toolName: boolean }
-                        PermMgr-->>CoreLoop: toolPermissionMap: Record<string, boolean>
+                        Note over PermMgr: **Permission Check:**<br/>Queries internal state for each tool.<br/>Returns Record<string, ToolAuthorizationState><br/>'APPROVED' | 'DENIED' | 'REQUESTABLE'
+                        PermMgr-->>CoreLoop: toolPermissionMap: Record<string, ToolAuthorizationState>
                     else No tools require permission
                         CoreLoop->>CoreLoop: toolPermissionMap = {}
                     end
@@ -148,32 +148,47 @@ sequenceDiagram
                         alt Tool doesn't exist
                             CoreLoop->>CoreLoop: Push error message
                             Note over CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result', error },<br/>  seenCount: 0<br/>})
-                        else Tool permission denied (toolPermissionMap[name] === false)
-                            rect rgb(255, 230, 230)
-                                Note over CoreLoop,PermMgr: **Authorization Blocked**
+                        else Authorization State: DENIED
+                            rect rgb(255, 200, 200)
+                                Note over CoreLoop: **Explicit Denial - No Request**
+                                
+                                CoreLoop->>CoreLoop: Push denial feedback message
+                                Note over CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result',<br/>    toolUseId,<br/>    content: '[Critical] You don't have permission<br/>             to call this tool. Explicitly denied<br/>             by authorization system.' },<br/>  seenCount: 0<br/>})<br/><br/>**Tool call blocked permanently.**<br/>No permission request emitted.
+                                
+                                CoreLoop->>CoreLoop: Stream denial event
+                                Note over CoreLoop: onStream({ type: 'agent.tool.permission.denied' })
+                            end
+                        else Authorization State: REQUESTABLE
+                            rect rgb(255, 230, 200)
+                                Note over CoreLoop,PermMgr: **Requestable - Build Permission Request**
                                 
                                 CoreLoop->>CoreLoop: Collect blocked tool for permission request
                                 Note over CoreLoop: toolsPendingPermission.push(toolDefinition)
                                 
                                 CoreLoop->>CoreLoop: Push blocking feedback message
-                                Note over CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result',<br/>    toolUseId,<br/>    content: '[Critical] Tool blocked - permission required.<br/>             Request lodged, please retry after approval.' },<br/>  seenCount: 0<br/>})<br/><br/>**Explicit feedback to LLM:**<br/>Tool was blocked but permission is being requested
+                                Note over CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result',<br/>    toolUseId,<br/>    content: '[Critical] Tool blocked - permission required.<br/>             Request lodged and responded to. Please try again.<br/>             System will facilitate permission acquisition.' },<br/>  seenCount: 0<br/>})<br/><br/>**Explicit feedback to LLM:**<br/>Tool blocked but permission being requested.<br/>LLM can retry after approval.
+                                
+                                CoreLoop->>CoreLoop: Stream blocked event
+                                Note over CoreLoop: onStream({ type: 'agent.tool.permission.blocked' })
                             end
-                        else Tool is MCP
-                            CoreLoop->>Tools: mcp.invokeTool(name, arguments)
-                            Tools-->>CoreLoop: result
-                            CoreLoop->>CoreLoop: Queue MCP result
-                            Note over CoreLoop: Result will be added with seenCount=0
-                        else Tool is Internal
-                            CoreLoop->>Tools: tool.fn(input, { otelInfo })
-                            Tools-->>CoreLoop: result
-                            CoreLoop->>CoreLoop: Queue internal result
-                            Note over CoreLoop: Result will be added with seenCount=0
-                        else Tool is Arvo Service
-                            alt Schema validation fails
-                                CoreLoop->>CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result', error },<br/>  seenCount: 0<br/>})
-                            else Schema validation succeeds
-                                CoreLoop->>CoreLoop: arvoToolCalls.push({ toolUseId, name, input })
-                                Note over CoreLoop: **CRITICAL BRANCH:**<br/>Agent will suspend here
+                        else Authorization State: APPROVED (or not in policy)
+                            alt Tool is MCP
+                                CoreLoop->>Tools: mcp.invokeTool(name, arguments)
+                                Tools-->>CoreLoop: result
+                                CoreLoop->>CoreLoop: Queue MCP result
+                                Note over CoreLoop: Result will be added with seenCount=0
+                            else Tool is Internal
+                                CoreLoop->>Tools: tool.fn(input, { otelInfo })
+                                Tools-->>CoreLoop: result
+                                CoreLoop->>CoreLoop: Queue internal result
+                                Note over CoreLoop: Result will be added with seenCount=0
+                            else Tool is Arvo Service
+                                alt Schema validation fails
+                                    CoreLoop->>CoreLoop: messages.push({<br/>  role: 'user',<br/>  content: { type: 'tool_result', error },<br/>  seenCount: 0<br/>})
+                                else Schema validation succeeds
+                                    CoreLoop->>CoreLoop: arvoToolCalls.push({ toolUseId, name, input })
+                                    Note over CoreLoop: **CRITICAL BRANCH:**<br/>Agent will suspend here
+                                end
                             end
                         end
                     end
@@ -194,11 +209,14 @@ sequenceDiagram
                     
                     alt toolsPendingPermission not empty AND permissionManager exists
                         CoreLoop->>PermMgr: requestBuilder(permissionManagerContext, toolsPendingPermission)
-                        Note over PermMgr: **Build Permission Request:**<br/>Developer-defined logic creates event payload<br/>with context about blocked tools
+                        Note over PermMgr: **Build Permission Request:**<br/>Developer-defined logic creates event payload<br/>with context about REQUESTABLE tools
                         PermMgr-->>CoreLoop: permissionRequestData (contract accepts schema)
                         
                         CoreLoop->>CoreLoop: Create permission request tool call
                         Note over CoreLoop: arvoToolCalls.push({<br/>  type: 'tool_use',<br/>  name: permissionManager.contract.accepts.type,<br/>  toolUseId: uuid(),<br/>  input: permissionRequestData<br/>})<br/><br/>**Permission request treated as Arvo service call**
+                        
+                        CoreLoop->>CoreLoop: Stream requested event
+                        Note over CoreLoop: onStream({ type: 'agent.tool.permission.requested' })
                     end
                 end
                 
@@ -217,7 +235,7 @@ sequenceDiagram
                     end
                 else No Arvo service calls (only sync tools executed)
                     CoreLoop->>CoreLoop: lifecycle = 'tool_result'
-                    Note over CoreLoop: Continue iteration with<br/>updated message history<br/>(all seenCount already incremented)<br/><br/>**LLM will see blocked tool feedback<br/>and may retry after seeing approval**
+                    Note over CoreLoop: Continue iteration with<br/>updated message history<br/>(all seenCount already incremented)<br/><br/>**LLM will see:**<br/>- DENIED tool feedback (permanent block)<br/>- REQUESTABLE tool feedback (can retry)<br/>- APPROVED tool results
                 end
                 
             else Response Type: TEXT or JSON
