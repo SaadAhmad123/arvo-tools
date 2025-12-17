@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.13
+
+### Patch Changes
+
+- 258905b: [Bugfix]: The internal tool name was inconsistant with other tool definitions. So fixed that
+
 ## 1.2.12
 
 ### Patch Changes
