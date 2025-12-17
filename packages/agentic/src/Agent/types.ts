@@ -115,6 +115,9 @@ export type AgentToolServerConfig<T> = {
   /** The internal identifier for the tool resource. */
   name: string;
 
+  /** The tool key chain as defined by the provider */
+  key: string[];
+
   /** The original definition source (Contract or Tool object) used to validate inputs. */
   contract: T;
 

@@ -89,14 +89,7 @@ export const calculatorAgent: EventHandlerFactory<{
     llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
     memory,
     onStream: async ({ type, data }) => {
-      if (
-        !(
-          type === 'agent.llm.delta.tool' ||
-          type === 'agent.llm.delta.text' ||
-          type === 'agent.llm.delta'
-        )
-      )
-        return;
+      if (!(type === 'agent.tool.request.delegation')) return;
       console.log(JSON.stringify({ type, data }, null, 2));
     },
     permissionManager,
