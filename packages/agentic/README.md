@@ -220,4 +220,5 @@ console.log(result.events[0].data.response);
 
 # Advanced Examples
 
-... coming soon
+Please visit [arvo.land](https://www.arvo.land/advanced/arvo-agentic-resumables)
+for more examples

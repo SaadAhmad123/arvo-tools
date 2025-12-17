@@ -25,6 +25,7 @@
     "opentelemetry"
   ],
   "author": "Saad Ahmad <saadkwi12@hotmail.com>",
+  "homepage": "https://www.arvo.land/advanced/arvo-agentic-resumables",
   "license": "MIT",
   "repository": {
     "type": "git",
