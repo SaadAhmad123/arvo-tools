@@ -48,6 +48,7 @@ export const generateServiceToolDefinitions = <
         required: cleanedRequired,
       },
       serverConfig: {
+        key: [key],
         name: value.contract.accepts.type,
         kind: 'arvo',
         contract: value.contract,
@@ -79,6 +80,7 @@ export const generateMcpToolDefinitions = async (
         description: item.description,
         inputSchema: item.inputSchema,
         serverConfig: {
+          key: [item.name],
           name: item.name,
           kind: 'mcp',
           contract: null,
@@ -106,7 +108,8 @@ export const generateAgentInternalToolDefinitions = <
       description: tool.description,
       inputSchema: zodToJsonSchema(tool.input),
       serverConfig: {
-        name: key,
+        key: [key],
+        name: tool.name,
         kind: 'internal',
         contract: tool,
         priority: tool.priority ?? 0,
