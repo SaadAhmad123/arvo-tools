@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.12
+
+### Patch Changes
+
+- f4711ab: Updated the Respository homepage
+
 ## 1.2.11
 
 ### Patch Changes
