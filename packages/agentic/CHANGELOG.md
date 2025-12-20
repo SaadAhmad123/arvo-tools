@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.14
+
+### Patch Changes
+
+- 182aa6f: Dependency upgrade (Arvo)
+
 ## 1.2.13
 
 ### Patch Changes
