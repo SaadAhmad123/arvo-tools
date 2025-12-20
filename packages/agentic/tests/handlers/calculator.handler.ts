@@ -60,7 +60,6 @@ export const calculatorContract = createArvoContract({
 export const calculatorHandler: EventHandlerFactory = () =>
   createArvoEventHandler({
     contract: calculatorContract,
-    executionunits: 0,
     handler: {
       '1.0.0': async ({ event }) => {
         const { expression } = event.data;
