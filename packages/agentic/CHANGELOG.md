@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.15
+
+### Patch Changes
+
+- 123e4a5: Version bump
+
 ## 1.2.14
 
 ### Patch Changes
