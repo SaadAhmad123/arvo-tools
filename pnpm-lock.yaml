@@ -78,11 +78,11 @@ importers:
         specifier: 1.9.0
         version: 1.9.0
       arvo-core:
-        specifier: 3.0.26
-        version: 3.0.26
+        specifier: 3.0.27
+        version: 3.0.27
       arvo-event-handler:
-        specifier: 3.0.26
-        version: 3.0.26
+        specifier: 3.0.27
+        version: 3.0.27
       openai:
         specifier: 6.10.0
         version: 6.10.0(zod@3.25.76)
@@ -867,12 +867,12 @@ packages:
     resolution: {integrity: sha512-HGyxoOTYUyCM6stUe6EJgnd4EoewAI7zMdfqO+kGjnlZmBDz/cR5pf8r/cR4Wq60sL/p0IkcjUEEPwS3GFrIyw==}
     engines: {node: '>=8'}
 
-  arvo-core@3.0.26:
-    resolution: {integrity: sha512-V5rQCDRvdwToVVkePDL7Uws9KDFul9mBhKE/UulaoOpcF89jVZDbYqNnkYNSiAxhF0VHkVBksUJBjqgAdtT7xQ==}
+  arvo-core@3.0.27:
+    resolution: {integrity: sha512-+TfVcAZSUtKbA1AD3MyuaJkZG/973gPJ5YprJbLbMiaRLvFPbrqQIYj6nVwyq6k60ZTpcrqktPwVPwckfl63pg==}
     engines: {node: '>=18.0.0'}
 
-  arvo-event-handler@3.0.26:
-    resolution: {integrity: sha512-uQRQp6CkC4sF7uT/ZrsiJ/m1MTaXajcfqALEaSafQXNSGjmwt3sVD0TnnFraPZNwhiHR1Nh4X/uP7iuPjpHtWw==}
+  arvo-event-handler@3.0.27:
+    resolution: {integrity: sha512-LAb5Q8hamGFdmnxnxyCpH9LA/ndoZjRRru/FAvCAzKJccc65+aSgUI84HGa53oP+sW1EnnuS+Vh6/k9VNskZTQ==}
     engines: {node: '>=18.0.0'}
 
   assertion-error@2.0.1:
@@ -2581,7 +2581,7 @@ snapshots:
 
   array-union@2.1.0: {}
 
-  arvo-core@3.0.26:
+  arvo-core@3.0.27:
     dependencies:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
@@ -2590,10 +2590,10 @@ snapshots:
       zod: 3.25.76
       zod-to-json-schema: 3.25.0(zod@3.25.76)
 
-  arvo-event-handler@3.0.26:
+  arvo-event-handler@3.0.27:
     dependencies:
       '@opentelemetry/api': 1.9.0
-      arvo-core: 3.0.26
+      arvo-core: 3.0.27
       uuid: 11.1.0
       xstate: 5.25.0
       zod: 3.25.76
