@@ -1,15 +1,11 @@
 import { createArvoContract } from 'arvo-core';
-import {
-  createArvoEventHandler,
-  type EventHandlerFactory,
-} from 'arvo-event-handler';
+import { createArvoEventHandler, type EventHandlerFactory } from 'arvo-event-handler';
 import { z } from 'zod';
 
 export const addContract = createArvoContract({
   uri: '#/org/amas/calculator/add',
   type: 'com.calculator.add',
-  description:
-    'This service provides the sum of all the numbers provided to it.',
+  description: 'This service provides the sum of all the numbers provided to it.',
   versions: {
     '1.0.0': {
       accepts: z.object({
