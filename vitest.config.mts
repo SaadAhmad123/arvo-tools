@@ -8,7 +8,7 @@ export default defineConfig({
     hookTimeout: 10000,
     include: ['tests/**/*.{test,spec}.ts'],
     coverage: {
-      provider: 'v8',
+      provider: 'istanbul',
       reporter: ['text', 'json', 'html'],
       exclude: ['node_modules/', 'dist/', '**/*.test.ts', '**/*.spec.ts', '**/tests/**'],
     },

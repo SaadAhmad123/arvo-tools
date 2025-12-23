@@ -42,7 +42,9 @@
   },
   "devDependencies": {
     "@types/node": "24.10.1",
-    "vitest": "^4.0.13"
+    "@vitest/coverage-istanbul": "4.0.13",
+    "vitest": "4.0.13",
+    "zod": "3.25.76"
   },
   "engines": {
     "node": ">=18.0.0"

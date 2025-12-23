@@ -116,9 +116,6 @@ export class ConcurrentMachineMemory<
     if (!id) {
       throw new Error('Machine ID is required for write operation');
     }
-    if (!data) {
-      throw new Error('Data is required for write operation');
-    }
 
     this.memoryMap.set(id, structuredClone(data));
 
