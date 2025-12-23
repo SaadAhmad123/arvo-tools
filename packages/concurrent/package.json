@@ -1,0 +1,50 @@
+{
+  "name": "@arvo-tools/concurrent",
+  "version": "0.0.0",
+  "description": "The official package of concurrent in-memory event broker and memory backend for Arvo Event Handlers",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check --fix .",
+    "format": "biome format --write .",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "arvo",
+    "event-driven architecture",
+    "cloudevent",
+    "opentelemetry"
+  ],
+  "author": "Saad Ahmad <saadkwi12@hotmail.com>",
+  "homepage": "https://www.arvo.land",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SaadAhmad123/arvo-tools.git",
+    "directory": "packages/concurrent"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "arvo-core": "3.0.27",
+    "arvo-event-handler": "3.0.27",
+    "async-mutex": "0.5.0",
+    "p-queue": "9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "vitest": "^4.0.13"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
