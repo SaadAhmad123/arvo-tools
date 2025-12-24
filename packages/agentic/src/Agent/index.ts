@@ -330,7 +330,10 @@ export const createArvoAgent = <
                 };
               }
 
-              await permissionManager?.cleanup?.(permissionManagerContext, { otelInfo });
+              await permissionManager?.cleanup?.({
+                source: permissionManagerContext,
+                config: { otelInfo },
+              });
 
               return {
                 context: resumableContextToPersist,
@@ -352,12 +355,12 @@ export const createArvoAgent = <
               resumedContext.awaitingToolCalls[service.parentid]!.data = service.data;
 
               if (service.type === permissionManager?.contract?.emitList?.[0]?.type) {
-                await permissionManager?.set(
-                  permissionManagerContext,
+                await permissionManager?.set({
+                  source: permissionManagerContext,
                   // biome-ignore lint/suspicious/noExplicitAny: Type casting here is weird
-                  service as any,
-                  { otelInfo },
-                );
+                  event: service as any,
+                  config: { otelInfo },
+                });
               }
 
               if (service.type === permissionManager?.contract?.systemError?.type) {
@@ -458,7 +461,10 @@ export const createArvoAgent = <
               };
             }
 
-            await permissionManager?.cleanup?.(permissionManagerContext, { otelInfo });
+            await permissionManager?.cleanup?.({
+              source: permissionManagerContext,
+              config: { otelInfo },
+            });
 
             return {
               context: resumableContextToPersist,
@@ -469,8 +475,8 @@ export const createArvoAgent = <
             };
           } catch (e) {
             // Add correct otelinfo object here
-            await permissionManager?.cleanup?.(
-              {
+            await permissionManager?.cleanup?.({
+              source: {
                 subject: context?.currentSubject ?? input?.subject ?? service?.subject ?? 'unknown',
                 accesscontrol:
                   context?.initEventAccessControl ??
@@ -479,8 +485,8 @@ export const createArvoAgent = <
                   null,
                 name: contracts.self.type,
               },
-              { otelInfo },
-            );
+              config: { otelInfo },
+            });
             throw e;
           } finally {
             await mcp?.disconnect({ otelInfo })?.catch(console.error);

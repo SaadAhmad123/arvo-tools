@@ -20,6 +20,7 @@ export const simplePermissionContract = createSimpleArvoContract({
             name: z.string(),
             originalName: z.string(),
             kind: z.string(),
+            requests: z.record(z.any()).array().nullable(),
           }),
         ),
       }),

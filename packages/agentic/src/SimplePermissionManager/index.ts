@@ -8,13 +8,12 @@ import {
   type InferVersionedArvoContract,
   type VersionedArvoContract,
 } from 'arvo-core';
-import type { AgentToolDefinition } from '../Agent/types';
 import type {
   IPermissionManager,
   PermissionManagerContext,
   ToolAuthorizationState,
 } from '../interfaces.permission.manager';
-import type { NonEmptyArray, OtelInfoType } from '../types';
+import type { NonEmptyArray } from '../types';
 import { simplePermissionContract } from './contract';
 
 /**
@@ -44,26 +43,46 @@ export class SimplePermissionManager
 {
   static readonly CONTRACT = simplePermissionContract;
   static readonly VERSIONED_CONTRACT = simplePermissionContract.version('1.0.0');
-  public readonly contract = simplePermissionContract.version('1.0.0');
-  public readonly domains: NonEmptyArray<string> | null;
-  readonly permissions = new Map<string, Record<string, boolean>>();
-  readonly enableCleanUp: boolean = true;
+  private readonly _contract = simplePermissionContract.version('1.0.0');
+  private readonly _permissions = new Map<string, Record<string, boolean>>();
+  private readonly _domains: NonEmptyArray<string> | null;
+  private readonly enableCleanUp: boolean;
+  private readonly shareToolInputInRequest: boolean;
+  private readonly permissionPersistance: 'SINGLE_USE' | 'WORKFLOW_WIDE';
 
-  constructor(config: { domains: NonEmptyArray<string> | null; enableCleanUp?: boolean }) {
-    this.domains = config.domains;
+  get permissions() {
+    return structuredClone(this._permissions);
+  }
+
+  get domains() {
+    return structuredClone(this._domains);
+  }
+
+  get contract() {
+    return this._contract;
+  }
+
+  constructor(config: {
+    domains: NonEmptyArray<string> | null;
+    enableCleanUp?: boolean;
+    shareToolInputInRequest?: boolean;
+    permissionPersistance?: 'SINGLE_USE' | 'WORKFLOW_WIDE';
+  }) {
+    this._domains = config.domains;
     this.enableCleanUp = config.enableCleanUp ?? true;
+    this.shareToolInputInRequest = config.shareToolInputInRequest ?? true;
+    this.permissionPersistance = config.permissionPersistance ?? 'WORKFLOW_WIDE';
   }
 
   private getKey(source: PermissionManagerContext): string {
     return `${source.name}:${source.subject}`;
   }
 
-  async get(
-    source: PermissionManagerContext,
-    // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
-    tools: AgentToolDefinition<any>[],
-    config: { otelInfo: OtelInfoType },
-  ): Promise<Record<string, ToolAuthorizationState>> {
+  async get({
+    source,
+    tools,
+    config,
+  }: Parameters<IPermissionManager['get']>[0]): Promise<Record<string, ToolAuthorizationState>> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: 'Permission.Check',
       disableSpanManagement: true,
@@ -80,9 +99,9 @@ export class SimplePermissionManager
       fn: async (span) => {
         try {
           const key = this.getKey(source);
-          const granted = this.permissions.get(key) ?? {};
+          const granted = this._permissions.get(key) ?? {};
           const result: Record<string, ToolAuthorizationState> = Object.fromEntries(
-            tools.map((tool) => [
+            Object.values(tools).map(({ definition: tool }) => [
               tool.name,
               ((): ToolAuthorizationState => {
                 if (granted[tool.name] === true) return 'APPROVED';
@@ -92,6 +111,11 @@ export class SimplePermissionManager
             ]),
           );
           span.setAttribute('tool.permission.map', JSON.stringify(result));
+          if (this.permissionPersistance === 'SINGLE_USE') {
+            // Drain all permissions for the source
+            // once they are accessed.
+            this._permissions.delete(key);
+          }
           return result;
         } catch (error) {
           exceptionToSpan(error as Error, span);
@@ -103,11 +127,7 @@ export class SimplePermissionManager
     });
   }
 
-  async set(
-    source: PermissionManagerContext,
-    event: { data: { granted: string[]; denied: string[] } },
-    config: { otelInfo: OtelInfoType },
-  ): Promise<void> {
+  async set({ source, event, config }: Parameters<IPermissionManager['set']>[0]): Promise<void> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: 'Permission.Update',
       disableSpanManagement: true,
@@ -124,14 +144,14 @@ export class SimplePermissionManager
       fn: async (span) => {
         try {
           const key = this.getKey(source);
-          const granted = this.permissions.get(key) ?? {};
+          const granted = this._permissions.get(key) ?? {};
           for (const toolName of event.data.granted) {
             granted[toolName] = true;
           }
           for (const toolName of event.data.denied) {
             granted[toolName] = false;
           }
-          this.permissions.set(key, granted);
+          this._permissions.set(key, granted);
           span.setAttribute('tool.permission.map', JSON.stringify(granted));
         } catch (error) {
           exceptionToSpan(error as Error, span);
@@ -143,12 +163,11 @@ export class SimplePermissionManager
     });
   }
 
-  async requestBuilder(
-    source: PermissionManagerContext,
-    // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
-    tools: AgentToolDefinition<any>[],
-    config: { otelInfo: OtelInfoType },
-  ): Promise<
+  async requestBuilder({
+    source,
+    tools,
+    config,
+  }: Parameters<IPermissionManager['requestBuilder']>[0]): Promise<
     InferVersionedArvoContract<
       VersionedArvoContract<typeof simplePermissionContract, '1.0.0'>
     >['accepts']['data']
@@ -171,11 +190,18 @@ export class SimplePermissionManager
           const request = {
             agentId: source.name,
             reason: `Agent ${source.name} is requesting permission to execute following tools`,
-            requestedTools: Array.from(new Set(tools.map((t) => t.name))),
+            requestedTools: Object.values(tools).map((t) => t.definition.name),
             toolMetaData: Object.fromEntries(
-              tools.map((t) => [
-                t.name,
-                { name: t.name, originalName: t.serverConfig.name, kind: t.serverConfig.kind },
+              Object.values(tools).map((t) => [
+                t.definition.name,
+                {
+                  name: t.definition.name,
+                  originalName: t.definition.serverConfig.name,
+                  kind: t.definition.serverConfig.kind,
+                  requests: this.shareToolInputInRequest
+                    ? t.requests.map((item) => ({ input: item.input }))
+                    : null,
+                },
               ]),
             ),
           };
@@ -191,10 +217,10 @@ export class SimplePermissionManager
     });
   }
 
-  async cleanup(
-    source: PermissionManagerContext,
-    config: { otelInfo: OtelInfoType },
-  ): Promise<void> {
+  async cleanup({
+    source,
+    config,
+  }: Parameters<NonNullable<IPermissionManager['cleanup']>>[0]): Promise<void> {
     if (!this.enableCleanUp) return;
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: 'Permission.Cleanup',
@@ -212,7 +238,7 @@ export class SimplePermissionManager
       fn: async (span) => {
         try {
           const key = this.getKey(source);
-          this.permissions.delete(key);
+          this._permissions.delete(key);
           span.setAttribute('tool.permission.cleanup.key', key);
         } catch (error) {
           exceptionToSpan(error as Error, span);

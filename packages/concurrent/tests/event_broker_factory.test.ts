@@ -389,7 +389,7 @@ test('createConcurrentEventBroker - prefetch controls concurrency', async () => 
 
   const stats2 = resolve(
     createArvoEventFactory(productContract.version('1.0.0')).accepts({
-      source: TEST_SOURCE + '2',
+      source: `${TEST_SOURCE}2`,
       data: { numbers: [3, 4] },
     }),
   );

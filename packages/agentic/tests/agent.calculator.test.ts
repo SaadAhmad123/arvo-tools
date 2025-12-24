@@ -103,6 +103,7 @@ const tests: ArvoTestSuite = {
                   What is x in 2x+5=67. Also in parallel can you help me get start on Astro.
                   Before executing the tools present the whole plan via human review tool and
                   await approval. You are banned from execution any tools before human review tool
+                  Always call calculator tools to perform calculations.
                 `),
                 parentSubject$$: null,
               },

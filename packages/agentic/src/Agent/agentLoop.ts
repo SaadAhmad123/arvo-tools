@@ -163,17 +163,28 @@ export const agentLoop = async (
             const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
             const prioritizedToolCalls = prioritizeToolCalls(response.toolRequests, nameToToolMap);
 
-            const toolPermissionMap: Record<string, ToolAuthorizationState> =
-              (await param.permissionManager?.get(
-                param.permissionManagerContext,
-                prioritizedToolCalls
-                  .filter((item) => param.permissionPolicy.includes(item.name))
-                  .map((item) => nameToToolMap[item.name]),
-                { otelInfo },
-              )) ?? {};
+            const toolPermissionRequest: Parameters<IPermissionManager['get']>[0]['tools'] = {};
+            for (const item of prioritizedToolCalls) {
+              if (!param.permissionPolicy.includes(item.name)) continue;
+              if (!toolPermissionRequest[item.name]) {
+                toolPermissionRequest[item.name] = {
+                  definition: nameToToolMap[item.name],
+                  requests: [],
+                };
+              }
+              toolPermissionRequest[item.name].requests.push(item);
+            }
 
-            // biome-ignore lint/suspicious/noExplicitAny: This needs to be general
-            const toolsPendingPermission: AgentToolDefinition<any>[] = [];
+            const toolPermissionMap: Record<string, ToolAuthorizationState> =
+              (await param.permissionManager?.get({
+                source: param.permissionManagerContext,
+                tools: toolPermissionRequest,
+                config: { otelInfo },
+              })) ?? {};
+
+            const toolsPendingPermission: Parameters<
+              IPermissionManager['requestBuilder']
+            >[0]['tools'] = {};
             for (const item of prioritizedToolCalls) {
               param.onStream({
                 type: 'agent.tool.request',
@@ -275,7 +286,13 @@ export const agentLoop = async (
 
               // Block tool call and build permission request
               if (toolPermissionMap[item.name] === 'REQUESTABLE') {
-                toolsPendingPermission.push(resolvedToolDef);
+                if (!toolsPendingPermission[item.name]) {
+                  toolsPendingPermission[item.name] = {
+                    definition: resolvedToolDef,
+                    requests: [],
+                  };
+                }
+                toolsPendingPermission[item.name].requests.push(item);
                 messages.push({
                   role: 'user',
                   content: {
@@ -423,12 +440,12 @@ export const agentLoop = async (
             for (const item of await Promise.all(internalToolResultPromises)) {
               messages.push({ role: 'user', content: item, seenCount: 0 });
             }
-            if (param.permissionManager && toolsPendingPermission.length) {
-              const toolPermissionRequest = await param.permissionManager?.requestBuilder(
-                param.permissionManagerContext,
-                toolsPendingPermission,
-                { otelInfo },
-              );
+            if (param.permissionManager && Object.keys(toolsPendingPermission).length) {
+              const toolPermissionRequest = await param.permissionManager?.requestBuilder({
+                source: param.permissionManagerContext,
+                tools: toolsPendingPermission,
+                config: { otelInfo },
+              });
 
               arvoToolCalls.push({
                 type: 'tool_use',
@@ -444,7 +461,7 @@ export const agentLoop = async (
                   permissionRequest: JSON.stringify({
                     contractType: param.permissionManager.contract.accepts.type,
                     toolCount: toolsPendingPermission.length,
-                    tools: toolsPendingPermission.map((tool) => ({
+                    tools: Object.values(toolsPendingPermission).map(({ definition: tool }) => ({
                       name: tool.name,
                       kind: tool.serverConfig.kind,
                       originalName: tool.serverConfig.name,
@@ -461,7 +478,7 @@ export const agentLoop = async (
               param.onStream({
                 type: 'agent.tool.permission.requested',
                 data: {
-                  tools: toolsPendingPermission.map((tool) => ({
+                  tools: Object.values(toolsPendingPermission).map(({ definition: tool }) => ({
                     name: tool.name,
                     kind: tool.serverConfig.kind,
                     originalName: tool.serverConfig.name,

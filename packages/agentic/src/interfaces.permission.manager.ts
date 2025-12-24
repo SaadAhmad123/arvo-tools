@@ -4,7 +4,7 @@ import type {
   VersionedArvoContract,
 } from 'arvo-core';
 import type { SimpleArvoContractEmitType } from 'arvo-core/dist/ArvoContract/SimpleArvoContract/types';
-import type { AgentToolDefinition } from './Agent/types';
+import type { AgentToolCallContent, AgentToolDefinition } from './Agent/types';
 import type { AgentInternalTool } from './AgentTool/types';
 import type { NonEmptyArray, OtelInfoType, PromiseAble } from './types';
 
@@ -66,85 +66,6 @@ export type PermissionManagerContext = {
  *
  * Permission managers should be fast on the read path (hot path during tool execution)
  * and can be slower on the write path (triggered only when authorization changes).
- *
- * @example
- * ```typescript
- * const permissionContract = createSimpleArvoContract({
- *   uri: '#/permissions/tool-access',
- *   type: 'permission.tool.access',
- *   domain: 'human.interaction',
- *   versions: {
- *     '1.0.0': {
- *       accepts: z.object({
- *         agentId: z.string(),
- *         requestedTools: z.array(z.string()),
- *         reason: z.string(),
- *         workflowContext: z.string(),
- *       }),
- *       emits: z.object({
- *         granted: z.array(z.string()),
- *         denied: z.array(z.string()),
- *         expiresAt: z.string().datetime().optional(),
- *       }),
- *     },
- *   },
- * });
- *
- * class ToolPermissionManager implements IPermissionManager<typeof permissionContract> {
- *   public readonly contract = permissionContract.version('1.0.0');
- *   // public readonly domains = ['human.interaction'];
- *   public readonly domains = [ArvoDomain.FROM_EVENT_CONTRACT];
- *   // Both domains are the same
- *
- *   private permissions = new Map<string, Set<string>>();
- *
- *   private getKey(source: PermissionManagerContext): string {
- *     return `${source.name}:${source.subject}`;
- *   }
- *
- *   async get(source, tools) {
- *     const key = this.getKey(source);
- *     const granted = this.permissions.get(key) ?? new Set();
- *     return Object.fromEntries(
- *       tools.map(tool => [
- *         tool.name,
- *         granted.has(tool.name) ? 'APPROVED' : 'REQUESTABLE'
- *       ])
- *     );
- *   }
- *
- *   async set(source, event) {
- *     const key = this.getKey(source);
- *     const granted = this.permissions.get(key) ?? new Set();
- *     for (const tool of event.data.granted) {
- *       granted.add(tool);
- *     }
- *     this.permissions.set(key, granted);
- *   }
- *
- *   async requestBuilder(source, tools) {
- *     return {
- *       agentId: source.name,
- *       requestedTools: tools.map(t => t.name),
- *       reason: `Agent requires permission: ${tools.map(t => t.name).join(', ')}`,
- *       workflowContext: source.subject,
- *     };
- *   }
- * }
- *
- * const agent = createArvoAgent({
- *   permissionManager: new ToolPermissionManager(),
- *   handler: {
- *     '1.0.0': {
- *       permissionPolicy: async ({ services }) => [
- *         services.deleteUser.name,
- *         services.processRefund.name
- *       ],
- *       // ... context and output builders
- *     }
- *   }
- * });
- * ```
  */
 export interface IPermissionManager<
   // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
@@ -182,13 +103,13 @@ export interface IPermissionManager<
    * @param source - Context identifying the agent and workflow for scoped storage
    * @param event - Authorization response matching contract's success emission schema
    */
-  set(
-    source: PermissionManagerContext,
+  set(param: {
+    source: PermissionManagerContext;
     event: InferVersionedArvoContract<T>['emits'][SimpleArvoContractEmitType<
       T['metadata']['rootType']
-    >],
-    config: { otelInfo: OtelInfoType },
-  ): PromiseAble<void>;
+    >];
+    config: { otelInfo: OtelInfoType };
+  }): PromiseAble<void>;
 
   /**
    * Checks current authorization status for requested tools.
@@ -203,14 +124,20 @@ export interface IPermissionManager<
    *          'DENIED' blocks execution without requesting permission, and 'REQUESTABLE'
    *          blocks execution but triggers a permission request event
    */
-  get(
-    source: PermissionManagerContext,
-    tools: AgentToolDefinition<
-      // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
-      VersionedArvoContract<any, any> | AgentInternalTool | null
-    >[],
-    config: { otelInfo: OtelInfoType },
-  ): PromiseAble<Record<string, ToolAuthorizationState>>;
+  get(param: {
+    source: PermissionManagerContext;
+    tools: Record<
+      string,
+      {
+        definition: AgentToolDefinition<
+          // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+          VersionedArvoContract<any, any> | AgentInternalTool | null
+        >;
+        requests: Omit<AgentToolCallContent, 'type'>[];
+      }
+    >;
+    config: { otelInfo: OtelInfoType };
+  }): PromiseAble<Record<string, ToolAuthorizationState>>;
 
   /**
    * Constructs permission request event payload for blocked tools.
@@ -225,14 +152,20 @@ export interface IPermissionManager<
    * @returns Event payload matching contract's accepts schema. Use agent-oriented
    *          tool names from `tools[i].name` for consistency with permission checks.
    */
-  requestBuilder(
-    source: PermissionManagerContext,
-    tools: AgentToolDefinition<
-      // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
-      VersionedArvoContract<any, any> | AgentInternalTool | null
-    >[],
-    config: { otelInfo: OtelInfoType },
-  ): PromiseAble<InferVersionedArvoContract<T>['accepts']['data']>;
+  requestBuilder(param: {
+    source: PermissionManagerContext;
+    tools: Record<
+      string,
+      {
+        definition: AgentToolDefinition<
+          // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+          VersionedArvoContract<any, any> | AgentInternalTool | null
+        >;
+        requests: Omit<AgentToolCallContent, 'type'>[];
+      }
+    >;
+    config: { otelInfo: OtelInfoType };
+  }): PromiseAble<InferVersionedArvoContract<T>['accepts']['data']>;
 
   /**
    * Cleanup hook invoked when agent execution completes or fails.
@@ -254,5 +187,8 @@ export interface IPermissionManager<
    *
    * @param source - Context identifying the agent and workflow for cleanup
    */
-  cleanup?(source: PermissionManagerContext, config: { otelInfo: OtelInfoType }): PromiseAble<void>;
+  cleanup?(param: {
+    source: PermissionManagerContext;
+    config: { otelInfo: OtelInfoType };
+  }): PromiseAble<void>;
 }
