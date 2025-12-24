@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.16
+
+### Patch Changes
+
+- 8a36417: Enhanced permission management
+
 ## 1.2.15
 
 ### Patch Changes
