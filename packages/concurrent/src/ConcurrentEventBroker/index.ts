@@ -1,3 +1,4 @@
+import { context } from '@opentelemetry/api';
 import { type ArvoEvent, cleanString } from 'arvo-core';
 import PQueue from 'p-queue';
 import type { BrokerConfig, EventHandler, Subscription, SubscriptionConfig } from './types';
@@ -87,19 +88,23 @@ export class ConcurrentEventBroker {
     }
 
     event.to && this.inFlightMap.set(event.to, (this.inFlightMap.get(event.to) ?? 0) + 1);
+
+    const currentContext = context.active();
     subscription.queue.add(async () => {
-      try {
-        await subscription.handler(event, this.publish.bind(this));
-      } catch (error) {
-        this.onError(error instanceof Error ? error : new Error(String(error)), event);
-      } finally {
-        if (event.to) {
-          this.inFlightMap.set(event.to, (this.inFlightMap.get(event.to) ?? 0) - 1);
-          if ((this.inFlightMap.get(event.to) ?? 0) < 1) {
-            this.inFlightMap.delete(event.to);
+      return await context.with(currentContext, async () => {
+        try {
+          await subscription.handler(event, this.publish.bind(this));
+        } catch (error) {
+          this.onError(error instanceof Error ? error : new Error(String(error)), event);
+        } finally {
+          if (event.to) {
+            this.inFlightMap.set(event.to, (this.inFlightMap.get(event.to) ?? 0) - 1);
+            if ((this.inFlightMap.get(event.to) ?? 0) < 1) {
+              this.inFlightMap.delete(event.to);
+            }
           }
         }
-      }
+      });
     });
   }
 
