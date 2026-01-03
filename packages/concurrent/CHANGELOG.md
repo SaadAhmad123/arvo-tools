@@ -1,5 +1,11 @@
 # @arvo-tools/concurrent
 
+## 1.0.3
+
+### Patch Changes
+
+- 5631cd2: Updating OTEL configuration to fix a tracing bug
+
 ## 1.0.2
 
 ### Patch Changes
