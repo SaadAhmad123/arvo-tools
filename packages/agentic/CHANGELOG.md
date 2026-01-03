@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 1.2.17
+
+### Patch Changes
+
+- e1e6895: Version bump cascading from the source dependencies
+
 ## 1.2.16
 
 ### Patch Changes

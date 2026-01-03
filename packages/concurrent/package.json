@@ -1,6 +1,6 @@
 {
   "name": "@arvo-tools/concurrent",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "The official package of concurrent in-memory event broker and memory backend for Arvo Event Handlers",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

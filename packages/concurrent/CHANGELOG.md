@@ -1,5 +1,11 @@
 # @arvo-tools/concurrent
 
+## 1.0.2
+
+### Patch Changes
+
+- e1e6895: Version bump cascading from the source dependencies
+
 ## 1.0.1
 
 ### Patch Changes
