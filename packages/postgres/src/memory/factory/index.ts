@@ -1,4 +1,5 @@
 import { PostgressMachineMemoryV1 } from '../v1';
+import { createTableV1 } from '../v1/helper';
 import type { ConnectPostgresMachineMemoryParam, PostgresMachineMemory } from './type';
 
 /**
@@ -74,4 +75,34 @@ export const connectPostgresMachineMemory = async <
  */
 export const releasePostgressMachineMemory = async (memory: PostgresMachineMemory) => {
   await memory.close();
+};
+
+/**
+ * Dangerously migrates PostgreSQL machine memory tables to the specified version schema.
+ *
+ * ⚠️ **WARNING**: This function can DROP existing tables and all their data if `dropIfExist` is true.
+ * Use with extreme caution, and never use it in production environments.
+ *
+ * This utility function creates the required database tables for the PostgreSQL machine memory
+ * implementation. It supports version-specific schema creation and optionally drops existing
+ * tables before recreating them.
+ *
+ * @param connectionString - PostgreSQL connection string (e.g., "postgresql://user:pass@localhost:5432/mydb")
+ * @param config - Migration configuration
+ *
+ * @throws Error if the specified version is not supported
+ * @throws Error if database connection fails
+ * @throws Error if table creation fails
+ */
+export const dangerouslyMigratePostgresMachineMemory = async (
+  connectionString: string,
+  config: {
+    version: ConnectPostgresMachineMemoryParam['version'];
+    dropIfExist?: boolean;
+  },
+) => {
+  if (config.version === 1) {
+    createTableV1(connectionString, { dropIfExist: config.dropIfExist });
+  }
+  throw new Error(`Unsupported PostgreSQL machine memory version: ${config.version}`);
 };

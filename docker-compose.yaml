@@ -20,6 +20,18 @@ services:
     networks:
       - jaeger-network  
 
+  postgres:
+    image: postgres:latest
+    container_name: arvo-postgres
+    environment:
+      POSTGRES_USER: arvo
+      POSTGRES_PASSWORD: arvo
+      POSTGRES_DB: arvo
+    ports:
+      - "5432:5432"
+    volumes:
+      - arvo_postgres_data:/var/lib/postgresql
+
   # Nginx reverse proxy
   nginx:
     image: nginx:alpine
@@ -37,3 +49,6 @@ services:
 networks:
   jaeger-network:
     driver: bridge
+
+volumes:
+  arvo_postgres_data:
