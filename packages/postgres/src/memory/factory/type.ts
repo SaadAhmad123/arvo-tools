@@ -17,8 +17,18 @@ export type ConnectPostgresMachineMemoryParam = {
    */
   tables?: PostgressMachineMemoryV1Param['tables'];
 } & {
-  /** PostgreSQL connection and behavioral configuration. Optional, uses defaults if not provided */
-  config?: PostgressConnectionConfig;
+  /** PostgreSQL connection and behavioral configuration */
+  config: PostgressConnectionConfig;
+  /**
+   * Database migration strategy when connecting to PostgreSQL machine memory.
+   *
+   * - `'if_tables_dont_exist'`: Creates tables if they don't exist. Safe for production use.
+   * - `'dangerousely_force_migration'`: Drops and recreates all tables, destroying existing data. **DANGEROUS** - use only in development/testing.
+   * - [DEFAULT] `'noop'`: No migration performed. Tables must already exist with correct schema or connection will fail during validation.
+   *
+   * @default 'noop'
+   */
+  migrate?: 'if_tables_dont_exist' | 'dangerousely_force_migration' | 'noop';
 };
 
 /**

@@ -39,14 +39,16 @@
   "dependencies": {
     "arvo-core": "3.0.28",
     "pg": "8.16.3",
+    "pg-format": "1.0.4",
     "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
+    "@types/pg": "8.16.0",
+    "@types/pg-format": "1.0.2",
     "@vitest/coverage-istanbul": "4.0.13",
-    "vitest": "4.0.13",
     "arvo-event-handler": "3.0.28",
-    "@types/pg": "8.16.0"
+    "vitest": "4.0.13"
   },
   "engines": {
     "node": ">=18.0.0"

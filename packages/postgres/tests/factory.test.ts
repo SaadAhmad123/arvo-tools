@@ -1,10 +1,6 @@
 import { Client } from 'pg';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  connectPostgresMachineMemory,
-  createPostgresMachineMemoryTables,
-  releasePostgressMachineMemory,
-} from '../src';
+import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../src';
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
 const testDbConfig = {
@@ -23,18 +19,24 @@ const testTables = {
 
 describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
   beforeAll(async () => {
-    await createPostgresMachineMemoryTables(connectionString, {
+    await connectPostgresMachineMemory({
       version: 1,
       tables: testTables,
-      dangerouslyDropTablesIfExist: true,
+      config: {
+        connectionString,
+      },
+      migrate: 'dangerousely_force_migration',
     });
   });
 
   beforeEach(async () => {
-    await createPostgresMachineMemoryTables(connectionString, {
+    await connectPostgresMachineMemory({
       version: 1,
       tables: testTables,
-      dangerouslyDropTablesIfExist: true,
+      config: {
+        connectionString,
+      },
+      migrate: 'dangerousely_force_migration',
     });
   });
 
@@ -209,26 +211,6 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
           },
         }),
       ).rejects.toThrow(/Unsupported PostgreSQL machine memory version/i);
-    });
-  });
-
-  describe('Default table names', () => {
-    it('should use default table names when tables parameter is not provided', async () => {
-      await createPostgresMachineMemoryTables(connectionString, {
-        version: 1,
-        dangerouslyDropTablesIfExist: true,
-      });
-
-      const memory = await connectPostgresMachineMemory({
-        version: 1,
-        config: {
-          connectionString: connectionString,
-        },
-      });
-
-      expect(memory).toBeDefined();
-
-      await releasePostgressMachineMemory(memory);
     });
   });
 

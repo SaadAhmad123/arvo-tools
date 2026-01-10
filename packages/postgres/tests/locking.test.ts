@@ -1,10 +1,6 @@
 import { Client } from 'pg';
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  connectPostgresMachineMemory,
-  createPostgresMachineMemoryTables,
-  releasePostgressMachineMemory,
-} from '../src';
+import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../src';
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
 
@@ -16,10 +12,13 @@ const testTables = {
 
 describe('Distributed Locking', () => {
   beforeEach(async () => {
-    await createPostgresMachineMemoryTables(connectionString, {
+    await connectPostgresMachineMemory({
       version: 1,
       tables: testTables,
-      dangerouslyDropTablesIfExist: true,
+      config: {
+        connectionString,
+      },
+      migrate: 'dangerousely_force_migration',
     });
   });
 
