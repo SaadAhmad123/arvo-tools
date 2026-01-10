@@ -2,6 +2,7 @@ import { type Span, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry } from 'arvo-core';
 import { type IMachineMemory, type MachineMemoryMetadata, Materialized } from 'arvo-event-handler';
 import { Pool, type PoolConfig } from 'pg';
+import format from 'pg-format';
 import { validateTable } from './schema';
 import type { PostgressMachineMemoryV1Param } from './types';
 
@@ -118,7 +119,7 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const client = await this.pool.connect();
         try {
           const result = await client.query(
-            `SELECT data, version FROM ${this.tables.state} WHERE subject = $1`,
+            format('SELECT data, version FROM %I WHERE subject = $1', this.tables.state),
             [id],
           );
           if (!result.rows.length) {
@@ -166,8 +167,10 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
               const resolvedInitiator = Materialized.isResolved(initiator) ? initiator.value : null;
 
               await client.query(
-                `INSERT INTO ${this.tables.state} (subject, data, version, execution_status, parent_subject, initiator, source, created_at, updated_at)
-              VALUES ($1, $2, 1, $3, $4, $5, $6, NOW(), NOW())`,
+                format(
+                  'INSERT INTO %I (subject, data, version, execution_status, parent_subject, initiator, source, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, $5, $6, NOW(), NOW())',
+                  this.tables.state,
+                ),
                 [
                   id,
                   JSON.stringify(data),
@@ -182,14 +185,16 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
                 rootSubject = id;
               } else {
                 const parentResult = await client.query(
-                  `SELECT root_subject FROM ${this.tables.hierarchy} WHERE subject = $1`,
+                  format('SELECT root_subject FROM %I WHERE subject = $1', this.tables.hierarchy),
                   [resolvedParentSubject],
                 );
                 rootSubject = parentResult.rows[0]?.root_subject ?? id;
               }
               await client.query(
-                `INSERT INTO ${this.tables.hierarchy} (subject, parent_subject, root_subject, created_at)
-              VALUES ($1, $2, $3, NOW())`,
+                format(
+                  'INSERT INTO %I (subject, parent_subject, root_subject, created_at) VALUES ($1, $2, $3, NOW())',
+                  this.tables.hierarchy,
+                ),
                 [id, resolvedParentSubject, rootSubject],
               );
               await client.query('COMMIT');
@@ -207,9 +212,10 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
           const newVersion = currentVersion + 1;
           span?.setAttribute('version', newVersion);
           const result = await client.query(
-            `UPDATE ${this.tables.state}
-          SET data = $1, version = $2, execution_status = $3, updated_at = NOW()
-          WHERE subject = $4 AND version = $5`,
+            format(
+              'UPDATE %I SET data = $1, version = $2, execution_status = $3, updated_at = NOW() WHERE subject = $4 AND version = $5',
+              this.tables.state,
+            ),
             [JSON.stringify(data), newVersion, resolvedExectionStatus, id, currentVersion],
           );
           if (result.rowCount === 0) {
@@ -247,15 +253,19 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
           for (let attempt = 0; attempt <= this.lockConfig.maxRetries; attempt++) {
             try {
               const result = await client.query(
-                `WITH arvo_lock_time AS (SELECT NOW() as now)
-            INSERT INTO ${this.tables.lock} (subject, locked_at, expires_at, created_at)
+                format(
+                  `WITH arvo_lock_time AS (SELECT NOW() as now)
+            INSERT INTO %I (subject, locked_at, expires_at, created_at)
             SELECT $1, now, now + ($2 || ' milliseconds')::INTERVAL, now FROM arvo_lock_time
-            ON CONFLICT (subject) 
-            DO UPDATE SET 
-              locked_at = (SELECT now FROM arvo_lock_time), 
+            ON CONFLICT (subject)
+            DO UPDATE SET
+              locked_at = (SELECT now FROM arvo_lock_time),
               expires_at = (SELECT now FROM arvo_lock_time) + ($2 || ' milliseconds')::INTERVAL
-            WHERE ${this.tables.lock}.expires_at < (SELECT now FROM arvo_lock_time)
+            WHERE %I.expires_at < (SELECT now FROM arvo_lock_time)
             RETURNING subject`,
+                  this.tables.lock,
+                  this.tables.lock,
+                ),
                 [id, this.lockConfig.ttlMs],
               );
               if (result.rowCount && result.rowCount > 0) {
@@ -301,7 +311,7 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         span?.setAttribute('subject', id);
         const client = await this.pool.connect();
         try {
-          await client.query(`DELETE FROM ${this.tables.lock} WHERE subject = $1`, [id]);
+          await client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.lock), [id]);
           return true;
         } catch (error) {
           span?.setStatus({
@@ -333,9 +343,9 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         try {
           await client.query('BEGIN');
           await Promise.all([
-            client.query(`DELETE FROM ${this.tables.state} WHERE subject = $1`, [id]),
-            client.query(`DELETE FROM ${this.tables.lock} WHERE subject = $1`, [id]),
-            client.query(`DELETE FROM ${this.tables.hierarchy} WHERE subject = $1`, [id]),
+            client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.state), [id]),
+            client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.lock), [id]),
+            client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.hierarchy), [id]),
           ]);
           await client.query('COMMIT');
         } catch (error) {
@@ -378,7 +388,7 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const client = await this.pool.connect();
         try {
           const result = await client.query(
-            `SELECT subject FROM ${this.tables.hierarchy} WHERE root_subject = $1`,
+            format('SELECT subject FROM %I WHERE root_subject = $1', this.tables.hierarchy),
             [rootSubject],
           );
           const subjects = result.rows
@@ -436,7 +446,7 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const client = await this.pool.connect();
         try {
           const result = await client.query(
-            `SELECT root_subject FROM ${this.tables.hierarchy} WHERE subject = $1`,
+            format('SELECT root_subject FROM %I WHERE subject = $1', this.tables.hierarchy),
             [subject],
           );
           if (!result.rows.length) {
