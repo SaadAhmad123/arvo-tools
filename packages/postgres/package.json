@@ -1,0 +1,54 @@
+{
+  "name": "@arvo-tools/postgres",
+  "version": "0.1.0",
+  "description": "The official package for Arvo's execution components in Postgres",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check --fix .",
+    "format": "biome format --write .",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "arvo",
+    "event-driven architecture",
+    "cloudevent",
+    "opentelemetry",
+    "postgres",
+    "arvo"
+  ],
+  "author": "Saad Ahmad <saadkwi12@hotmail.com>",
+  "homepage": "https://www.arvo.land",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SaadAhmad123/arvo-tools.git",
+    "directory": "packages/postgres"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "arvo-core": "3.0.28",
+    "pg": "8.16.3",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@vitest/coverage-istanbul": "4.0.13",
+    "vitest": "4.0.13",
+    "arvo-event-handler": "3.0.28",
+    "@types/pg": "8.16.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
