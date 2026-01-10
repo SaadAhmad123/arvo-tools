@@ -1,4 +1,8 @@
-export { connectPostgresMachineMemory, releasePostgressMachineMemory } from './memory/factory';
+export {
+  connectPostgresMachineMemory,
+  createPostgresMachineMemoryTables,
+  releasePostgressMachineMemory,
+} from './memory/factory';
 export type {
   ConnectPostgresMachineMemoryParam,
   PostgresMachineMemory,

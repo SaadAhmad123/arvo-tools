@@ -15,7 +15,7 @@ export type ConnectPostgresMachineMemoryParam = {
    * Names of the PostgreSQL tables used by the machine memory.
    * These tables must exist and match the expected schema structure.
    */
-  tables: PostgressMachineMemoryV1Param['tables'];
+  tables?: PostgressMachineMemoryV1Param['tables'];
 } & {
   /** PostgreSQL connection and behavioral configuration. Optional, uses defaults if not provided */
   config?: PostgressConnectionConfig;

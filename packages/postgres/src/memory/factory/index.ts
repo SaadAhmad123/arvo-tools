@@ -1,5 +1,6 @@
 import { PostgressMachineMemoryV1 } from '../v1';
 import { createTableV1 } from '../v1/helper';
+import { DEFAULT_V1_TABLE_NAMES } from './defaults';
 import type { ConnectPostgresMachineMemoryParam, PostgresMachineMemory } from './type';
 
 /**
@@ -52,7 +53,7 @@ export const connectPostgresMachineMemory = async <
 }: ConnectPostgresMachineMemoryParam): Promise<PostgresMachineMemory<T>> => {
   if (version === 1) {
     const memory = new PostgressMachineMemoryV1<T>({
-      tables,
+      tables: tables ?? DEFAULT_V1_TABLE_NAMES,
       config,
     });
     await memory.validateTableStructure();
@@ -78,31 +79,74 @@ export const releasePostgressMachineMemory = async (memory: PostgresMachineMemor
 };
 
 /**
- * Dangerously migrates PostgreSQL machine memory tables to the specified version schema.
+ * Creates PostgreSQL machine memory tables with the specified schema version.
  *
- * ⚠️ **WARNING**: This function can DROP existing tables and all their data if `dropIfExist` is true.
- * Use with extreme caution, and never use it in production environments.
+ * ⚠️ **WARNING**: Setting `dangerouslyDropTablesIfExist` to true will DROP existing tables and ALL their data.
+ * Use this option with extreme caution, and never in production environments.
  *
- * This utility function creates the required database tables for the PostgreSQL machine memory
- * implementation. It supports version-specific schema creation and optionally drops existing
- * tables before recreating them.
+ * This utility function creates the required database tables (state, lock, and hierarchy) for the
+ * PostgreSQL machine memory implementation. It supports version-specific schema creation and
+ * optionally drops existing tables before recreating them (useful for testing and development).
  *
  * @param connectionString - PostgreSQL connection string (e.g., "postgresql://user:pass@localhost:5432/mydb")
- * @param config - Migration configuration
+ * @param config - Table creation configuration
+ * @param config.version - Schema version to use (currently only version 1 is supported)
+ * @param config.tables - Custom table names configuration
+ * @param config.tables.state - Name for the state table (stores workflow data, versions, execution status, metadata)
+ * @param config.tables.lock - Name for the lock table (manages distributed locks with TTL-based expiration)
+ * @param config.tables.hierarchy - Name for the hierarchy table (tracks workflow parent-child relationships)
+ * @param config.dangerouslyDropTablesIfExist - If true, drops existing tables before creating them (⚠️ DANGEROUS - causes data loss)
  *
  * @throws Error if the specified version is not supported
  * @throws Error if database connection fails
  * @throws Error if table creation fails
+ *
+ * @example
+ * ```typescript
+ * // Create tables with default behavior (doesn't drop existing tables)
+ * await createPostgresMachineMemoryTables(connectionString, {
+ *   version: 1,
+ *   tables: {
+ *     state: 'machine_memory_state',
+ *     lock: 'machine_memory_lock',
+ *     hierarchy: 'machine_memory_hierarchy'
+ *   }
+ * });
+ *
+ * // DANGEROUS: Drop and recreate tables (useful for testing and development)
+ * await createPostgresMachineMemoryTables(connectionString, {
+ *   version: 1,
+ *   tables: {
+ *     state: 'machine_memory_state',
+ *     lock: 'machine_memory_lock',
+ *     hierarchy: 'machine_memory_hierarchy'
+ *   },
+ *   dangerouslyDropTablesIfExist: true // ⚠️ This will delete all existing data!
+ * });
+ *
+ * // Use custom table names
+ * await createPostgresMachineMemoryTables(connectionString, {
+ *   version: 1,
+ *   tables: {
+ *     state: 'my_workflow_state',
+ *     lock: 'my_workflow_locks',
+ *     hierarchy: 'my_workflow_hierarchy'
+ *   }
+ * });
+ * ```
  */
-export const dangerouslyMigratePostgresMachineMemory = async (
+export const createPostgresMachineMemoryTables = async (
   connectionString: string,
-  config: {
-    version: ConnectPostgresMachineMemoryParam['version'];
-    dropIfExist?: boolean;
+  config: Pick<ConnectPostgresMachineMemoryParam, 'version' | 'tables'> & {
+    dangerouslyDropTablesIfExist?: boolean;
   },
 ) => {
   if (config.version === 1) {
-    createTableV1(connectionString, { dropIfExist: config.dropIfExist });
+    await createTableV1(connectionString, {
+      dropIfExist: config.dangerouslyDropTablesIfExist,
+      tables: config.tables ?? DEFAULT_V1_TABLE_NAMES,
+    });
+    return;
   }
   throw new Error(`Unsupported PostgreSQL machine memory version: ${config.version}`);
 };
