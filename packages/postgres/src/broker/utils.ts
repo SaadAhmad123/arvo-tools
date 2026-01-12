@@ -62,7 +62,7 @@ export const otelParentContext = (event: ArvoEvent) => {
       const spanContext: SpanContext = {
         traceId,
         spanId,
-        traceFlags: Number.parseInt(traceFlags),
+        traceFlags: Number.parseInt(traceFlags, 10),
       };
       parentContext = trace.setSpanContext(context.active(), spanContext);
     }

@@ -2,42 +2,66 @@ import { context } from '@opentelemetry/api';
 import { type ArvoEvent, cleanString } from 'arvo-core';
 import type { IArvoEventHandler } from 'arvo-event-handler';
 import { PgBoss, type Queue, type WorkHandler } from 'pg-boss';
-import type { HandlerRegistrationOptions } from './types';
+import type { HandlerRegistrationOptions, ILogger } from './types';
 import { createArvoEventFromJob, otelParentContext } from './utils';
 
 type PromiseLike<T> = Promise<T> | T;
 
 /**
  * Queue-based event broker for ArvoEvent handlers with automatic routing,
- * retry logic, and full OpenTelemetry tracing support.
+ * retry logic, and OpenTelemetry tracing support.
  *
- * It manages event-driven workflows by automatically routing events
- * between registered handlers through persistent queues, ensuring reliable
- * delivery with configurable retry policies and failure handling.
+ * PostgresEventBroker extends PgBoss to provide event-driven workflow management
+ * through persistent PostgreSQL-backed queues. It automatically routes events between
+ * registered handlers, ensures reliable delivery with configurable retry policies,
+ * and maintains distributed tracing context across the entire workflow.
+ *
+ * Key capabilities include handler registration with dedicated queues, automatic
+ * event routing based on the 'to' field, workflow completion handling, support for
+ * domained events, and comprehensive queue statistics for monitoring.
  *
  * @example
  * ```typescript
- * const broker = new ArvoPgBoss({ connectionString: 'postgres://...' });
+ * const broker = new PostgresEventBroker({ connectionString: 'postgres://...' });
  * await broker.start();
  *
- * // Register event handlers
+ * // Register handlers with retry configuration
  * await broker.register(calculatorHandler, {
- *   worker: { concurrency: 5, retryLimit: 3 }
+ *   recreateQueue: true,
+ *   worker: {
+ *     concurrency: 5,
+ *     retryLimit: 3,
+ *     retryBackoff: true
+ *   }
  * });
  *
  * // Set up workflow completion handler
  * await broker.onWorkflowComplete({
  *   source: 'my.workflow',
- *   handler: async (event) => {
- *     console.log('Workflow completed', event);
+ *   listener: async (event) => {
+ *     this.logger.log('Workflow completed:', event.data);
  *   }
  * });
  *
- * // Dispatch initial event
- * await broker.dispatch(initialEvent);
+ * // Handle domained events (e.g., human approval requests)
+ * broker.onDomainedEvent(async (event) => {
+ *   if (event.domain === 'human.interaction') {
+ *     await handleHumanApproval(event);
+ *   }
+ * });
+ *
+ * // Dispatch events using ArvoEventFactory
+ * const event = createArvoEventFactory(contract.version('1.0.0')).accepts({
+ *   source: 'my.workflow',
+ *   data: { numbers: [1, 2, 3] }
+ * });
+ * await broker.dispatch(event);
+ *
+ * // Monitor queue health
+ * const stats = await broker.getStats();
  * ```
  */
-export class ArvoPgBoss extends PgBoss {
+export class PostgresEventBroker extends PgBoss {
   /**
    * Internal registry of handler configurations keyed by handler source.
    */
@@ -61,6 +85,37 @@ export class ArvoPgBoss extends PgBoss {
   }
 
   /**
+   * Logger instance used for all broker operational logging.
+   * Defaults to console but can be replaced via setLogger().
+   */
+  private logger: ILogger = console;
+
+  /**
+   * Sets a custom logger for broker operations.
+   *
+   * Allows integration with existing logging infrastructure (Winston, Pino, etc.)
+   * by providing a logger that implements the ILogger interface.
+   *
+   * @param logger - Logger instance implementing ILogger interface
+   *
+   * @example
+   * ```typescript
+   * import winston from 'winston';
+   *
+   * const logger = winston.createLogger({
+   *   level: 'info',
+   *   format: winston.format.json(),
+   *   transports: [new winston.transports.Console()]
+   * });
+   *
+   * broker.setLogger(logger);
+   * ```
+   */
+  public setLogger(logger: ILogger) {
+    this.logger = logger;
+  }
+
+  /**
    * The configured event source for workflow completion.
    */
   private injectionEventSource: string | null = null;
@@ -69,13 +124,13 @@ export class ArvoPgBoss extends PgBoss {
    * Default callback invoked when an event has no registered destination handler.
    */
   private _onHandlerNotFound: (event: ArvoEvent) => PromiseLike<void> = (event) =>
-    console.error('Handler not found for event', event.toString(2));
+    this.logger.error('Handler not found for event', event.toString(2));
 
   /**
    * Callback invoked when a domained event is encountered during routing.
    */
   private _onDomainedEvent: ((event: ArvoEvent) => PromiseLike<void>) | null = (event) =>
-    console.log('Domained event encountered', event.toString(2));
+    this.logger.info('Domained event encountered', event.toString(2));
 
   /**
    * Registers a handler for workflow completion events.
@@ -87,9 +142,12 @@ export class ArvoPgBoss extends PgBoss {
    * Sets the injection event source that must match the source of events
    * dispatched via the dispatch() method.
    *
+   * **Note:** The listener must handle its own errors. Exceptions are caught
+   * and logged but do not cause job failures. This is by design.
+   *
    * @param param - Configuration object
    * @param param.source - Event source identifier for completion events
-   * @param param.handler - Callback invoked when completion events are received
+   * @param param.listener - Callback invoked when completion events are received
    * @param param.options - Optional queue and worker configuration
    *
    * @example
@@ -97,7 +155,11 @@ export class ArvoPgBoss extends PgBoss {
    * await broker.onWorkflowComplete({
    *   source: 'test.test.test',
    *   listener: async (event) => {
-   *     console.log('Final result:', event.data);
+   *     try {
+   *       this.logger.log('Final result:', event.data);
+   *     } catch (error) {
+   *       logger.error('Completion handler failed', error);
+   *     }
    *   },
    * });
    * ```
@@ -109,13 +171,10 @@ export class ArvoPgBoss extends PgBoss {
   }) {
     this.injectionEventSource = param.source;
     this.handlers[param.source] = { options: param.options };
-
     if (param.options?.recreateQueue) {
       await this.deleteQueue(param.source);
     }
-
     await this.createQueue(param.source, param.options?.queue);
-
     for (let i = 0; i < Math.max(param.options?.worker?.concurrency ?? 0, 1); i++) {
       await this.work<ReturnType<ArvoEvent['toJSON']>, undefined>(
         param.source,
@@ -130,7 +189,10 @@ export class ArvoPgBoss extends PgBoss {
               return await param.listener(eventFromJob);
             });
           } catch (error) {
-            console.error(`Error in worker handler for ${param.source}`, error);
+            this.logger.error(
+              `[onWorkflowComplete] Error in worker handler for ${param.source}`,
+              error,
+            );
           }
         },
       );
@@ -144,12 +206,19 @@ export class ArvoPgBoss extends PgBoss {
    * registered handler, this callback is invoked. Useful for logging
    * routing errors or implementing fallback behavior.
    *
+   * **Note:** The listener must handle its own errors. Exceptions are
+   * suppressed by design to prevent routing failures from cascading.
+   *
    * @param listner - Callback invoked with unroutable events
    *
    * @example
    * ```typescript
    * broker.onHandlerNotFound(async (event) => {
-   *   logger.error('No handler for', event.to);
+   *   try {
+   *     logger.error('No handler for', event.to);
+   *   } catch (error) {
+   *     this.logger.error('Failed to log missing handler', error);
+   *   }
    * });
    * ```
    */
@@ -160,13 +229,24 @@ export class ArvoPgBoss extends PgBoss {
   /**
    * Sets a custom handler for domained events.
    *
+   * Domained events are intercepted during routing and passed to this handler
+   * instead of being sent to a queue. Useful for handling external system
+   * interactions like human approvals or notifications.
+   *
+   * **Note:** The listener must handle its own errors. Exceptions are
+   * suppressed by design to prevent domained event failures from breaking workflows.
+   *
    * @param listner - Callback invoked when domained events are encountered
    *
    * @example
    * ```typescript
    * broker.onDomainedEvent(async (event) => {
-   *   if (event.domain === 'notification') {
-   *     await alerting.notify(event);
+   *   try {
+   *     if (event.domain === 'notification') {
+   *       await alerting.notify(event);
+   *     }
+   *   } catch (error) {
+   *     logger.error('Domained event handler failed', error);
    *   }
    * });
    * ```
@@ -217,25 +297,25 @@ export class ArvoPgBoss extends PgBoss {
     if (this.handlers[handler.source]) {
       throw new Error(
         cleanString(`
-        Handler registration failed: A handler with source '${handler.source}' is already registered. 
-        Each handler must have a unique source identifier. Attempted duplicate registration will be 
+        Handler registration failed: A handler with source '${handler.source}' is already registered.
+        Each handler must have a unique source identifier. Attempted duplicate registration will be
         ignored to prevent queue conflicts.
       `),
       );
     }
 
-    this.handlers[handler.source] = { options };
+    this.handlers[handler.source] = { options: { ...options } };
 
     if (options?.recreateQueue) {
       await this.deleteQueue(handler.source);
     }
-
     await this.createQueue(handler.source, options?.queue);
+
+    const handlerSource = handler.source;
 
     const workHandler: WorkHandler<ReturnType<ArvoEvent['toJSON']>, undefined> = async ([job]) => {
       try {
         const eventFromJob = createArvoEventFromJob(job);
-
         const { events } = await context.with(otelParentContext(eventFromJob), async () => {
           return await handler.execute(eventFromJob, {
             inheritFrom: 'EVENT',
@@ -245,25 +325,19 @@ export class ArvoPgBoss extends PgBoss {
         await Promise.all(
           events.map(async (evt) => {
             if (evt.domain) {
-              await this._onDomainedEvent?.(evt);
-              return;
+              try {
+                await this._onDomainedEvent?.(evt);
+              } catch (error) {
+                this.logger.error('Error in onDomainedEvent', error);
+              }
+
+              return undefined;
             }
             return await this._emitArvoEvent(evt);
           }),
         );
       } catch (error) {
-        console.error(`Error in worker handler for ${handler.source}`, error);
-        const resp = (await options?.worker?.onError?.(job, error as Error)) ?? 'RETRY';
-        if (resp === 'IGNORE') return;
-        if (resp === 'FAIL') {
-          await this.fail(handler.source, job.id, {
-            errorName: (error as Error).name,
-            errorMessage: (error as Error).message,
-            errorStack: (error as Error).stack,
-            errorCause: (error as Error).cause,
-          }).catch(console.error);
-          return;
-        }
+        this.logger.error(`Error in worker handler for ${handlerSource}`, error);
         throw error;
       }
     };
@@ -292,14 +366,16 @@ export class ArvoPgBoss extends PgBoss {
    */
   private async _emitArvoEvent(event: ArvoEvent) {
     if (!event.to || !this._queues.includes(event.to)) {
-      this._onHandlerNotFound?.(event);
+      try {
+        await this._onHandlerNotFound?.(event);
+      } catch (e) {
+        this.logger.error('Error in onHandlerNotFound ', e);
+      }
       return null;
     }
-
     // biome-ignore lint/correctness/noUnusedVariables: This is need sadly
-    const { concurrency, pollingIntervalSeconds, onError, ...rest } =
+    const { concurrency, pollingIntervalSeconds, ...rest } =
       this.handlers[event.to].options?.worker ?? {};
-
     return await this.send(event.to, event.toJSON(), {
       ...(rest ?? {}),
     });
@@ -334,8 +410,8 @@ export class ArvoPgBoss extends PgBoss {
     if (!this.injectionEventSource) {
       throw new Error(
         cleanString(`
-        Workflow completion handler not configured: Cannot dispatch ArvoEvent without setting up 
-        the workflow completion handler. Call onWorkflowComplete({ source: string, handler: Function }) 
+        Workflow completion handler not configured: Cannot dispatch ArvoEvent without setting up
+        the workflow completion handler. Call onWorkflowComplete({ source: string, handler: Function })
         to register the completion point before dispatching events into the system.
       `),
       );
@@ -343,9 +419,9 @@ export class ArvoPgBoss extends PgBoss {
     if (this.injectionEventSource !== event.source) {
       throw new Error(
         cleanString(`
-        Event source mismatch: The dispatched event source '${event.source}' does not match the 
-        configured workflow completion source '${this.injectionEventSource}'. Events dispatched 
-        through dispatch() must originate from the source specified in onWorkflowComplete(). 
+        Event source mismatch: The dispatched event source '${event.source}' does not match the
+        configured workflow completion source '${this.injectionEventSource}'. Events dispatched
+        through dispatch() must originate from the source specified in onWorkflowComplete().
         Verify the event's source property matches '${this.injectionEventSource}'.
       `),
       );
@@ -353,7 +429,7 @@ export class ArvoPgBoss extends PgBoss {
     if (!this._queues.includes(event.to ?? '')) {
       throw new Error(
         cleanString(`
-        Handler not registered: No handler found for destination '${event.to}'. The target handler 
+        Handler not registered: No handler found for destination '${event.to}'. The target handler
         must be registered using register() before events can be routed to it. Register the required
         handler or verify the event's 'to' property is correct.
       `),
@@ -371,7 +447,7 @@ export class ArvoPgBoss extends PgBoss {
    * ```typescript
    * const stats = await broker.getStats();
    * stats.forEach(stat => {
-   *   console.log(`Queue ${stat.name}: ${stat.activeCount} active, ${stat.queuedCount} queued`);
+   *   this.logger.log(`Queue ${stat.name}: ${stat.activeCount} active, ${stat.queuedCount} queued`);
    * });
    * ```
    */

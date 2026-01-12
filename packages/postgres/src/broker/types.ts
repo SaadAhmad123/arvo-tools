@@ -1,5 +1,4 @@
-import type { ArvoEvent } from 'arvo-core';
-import type { Job, QueuePolicy } from 'pg-boss';
+import type { QueuePolicy } from 'pg-boss';
 
 /**
  * Job-level options that control how individual jobs are processed by PgBoss.
@@ -41,16 +40,6 @@ export type WorkerConfigOptions = {
   pollingIntervalSeconds?: number;
   /** Number of concurrent worker instances to spawn for this handler. Default: 1 */
   concurrency?: number;
-  /**
-   * Error handler callback that determines job retry behavior.
-   * @param job - The job that encountered an error
-   * @param error - The error that occurred
-   * @returns 'RETRY' to retry the job, 'IGNORE' to skip, or 'FAIL' to mark as failed
-   */
-  onError?: (
-    job: Job<ReturnType<ArvoEvent['toJSON']>>,
-    error: Error,
-  ) => PromiseLike<'RETRY' | 'IGNORE' | 'FAIL'>;
 };
 
 /**
@@ -83,3 +72,35 @@ export type HandlerRegistrationOptions = {
   /** Worker-level configuration and job options */
   worker?: WorkerOptions;
 };
+
+/**
+ * Logger interface for broker operations.
+ *
+ * Allows users to inject their own logging implementation (Winston, Pino, etc.)
+ * or use the default console logger. All broker operational logs use this interface.
+ */
+export interface ILogger {
+  /**
+   * Log informational messages about broker operations.
+   * @param message - Primary log message
+   * @param optionalParams - Additional context or data
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+  log(message?: any, ...optionalParams: any[]): void;
+
+  /**
+   * Log error messages for failures or exceptions.
+   * @param message - Error message or description
+   * @param optionalParams - Error object or additional context
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+  error(message?: any, ...optionalParams: any[]): void;
+
+  /**
+   * Log informational messages (alias for log).
+   * @param message - Primary log message
+   * @param optionalParams - Additional context or data
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+  info(message?: any, ...optionalParams: any[]): void;
+}
