@@ -1,5 +1,11 @@
 # @arvo-tools/postgres
 
+## 1.2.0
+
+### Minor Changes
+
+- 0e8d857: Introducing database safety and postgres based event broker
+
 ## 1.1.0
 
 ### Minor Changes
