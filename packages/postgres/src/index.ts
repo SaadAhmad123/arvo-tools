@@ -1,3 +1,11 @@
+export { PostgresEventBroker } from './broker';
+export type {
+  HandlerRegistrationOptions,
+  QueueOptions,
+  WorkerConfigOptions,
+  WorkerJobOptions,
+  WorkerOptions,
+} from './broker/types';
 export {
   connectPostgresMachineMemory,
   releasePostgressMachineMemory,
