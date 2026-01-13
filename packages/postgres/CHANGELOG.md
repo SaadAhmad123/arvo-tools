@@ -1,5 +1,11 @@
 # @arvo-tools/postgres
 
+## 1.2.1
+
+### Patch Changes
+
+- 991ac43: Add README.md and SECURITY.md to the package
+
 ## 1.2.0
 
 ### Minor Changes
