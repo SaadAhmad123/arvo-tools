@@ -1,5 +1,11 @@
 # @arvo-tools/postgres
 
+## 1.2.2
+
+### Patch Changes
+
+- c0803c9: Updated dependencies
+
 ## 1.2.1
 
 ### Patch Changes
