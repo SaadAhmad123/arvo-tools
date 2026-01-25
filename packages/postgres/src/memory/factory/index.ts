@@ -48,6 +48,7 @@ export const connectPostgresMachineMemory = async <
   T extends Record<string, unknown> = Record<string, unknown>,
 >({
   version,
+  schema = 'arvopg',
   tables,
   config,
   migrate = 'noop',
@@ -64,10 +65,12 @@ export const connectPostgresMachineMemory = async <
       if (migrate && migrate !== 'noop') {
         await createTableV1(connectionString, {
           dropIfExist: migrate === 'dangerousely_force_migration',
+          schema,
           tables: tables ?? DEFAULT_V1_TABLE_NAMES,
         });
       }
       const memory = new PostgressMachineMemoryV1<T>({
+        schema,
         tables: tables ?? DEFAULT_V1_TABLE_NAMES,
         config,
       });

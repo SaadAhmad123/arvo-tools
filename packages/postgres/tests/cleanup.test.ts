@@ -5,6 +5,8 @@ import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
 
+const testSchema = 'arvopg';
+
 const testTables = {
   state: 'machine_memory_state',
   lock: 'machine_memory_lock',
@@ -27,6 +29,7 @@ describe('Cleanup Operations', () => {
   beforeEach(async () => {
     await connectPostgresMachineMemory({
       version: 1,
+      schema: testSchema,
       tables: testTables,
       config: {
         connectionString,
@@ -39,6 +42,7 @@ describe('Cleanup Operations', () => {
     it('should not delete records when enableCleanup is false', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -58,14 +62,15 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const stateResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
-      const lockResult = await client.query(`SELECT * FROM ${testTables.lock} WHERE subject = $1`, [
-        'test-subject',
-      ]);
+      const lockResult = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
+        ['test-subject'],
+      );
       const hierarchyResult = await client.query(
-        `SELECT * FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['test-subject'],
       );
 
@@ -81,6 +86,7 @@ describe('Cleanup Operations', () => {
     it('should not delete records when enableCleanup is not specified', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -96,7 +102,7 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const stateResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
 
@@ -112,6 +118,7 @@ describe('Cleanup Operations', () => {
     it('should delete from state table when enableCleanup is true', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -130,7 +137,7 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const stateResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
 
@@ -144,6 +151,7 @@ describe('Cleanup Operations', () => {
     it('should delete from lock table when enableCleanup is true', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -162,9 +170,10 @@ describe('Cleanup Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
 
-      const lockResult = await client.query(`SELECT * FROM ${testTables.lock} WHERE subject = $1`, [
-        'test-subject',
-      ]);
+      const lockResult = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
+        ['test-subject'],
+      );
 
       await client.end();
 
@@ -176,6 +185,7 @@ describe('Cleanup Operations', () => {
     it('should delete from hierarchy table when enableCleanup is true', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -194,7 +204,7 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const hierarchyResult = await client.query(
-        `SELECT * FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['test-subject'],
       );
 
@@ -208,6 +218,7 @@ describe('Cleanup Operations', () => {
     it('should delete from all tables simultaneously', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -227,14 +238,15 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const stateResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
-      const lockResult = await client.query(`SELECT * FROM ${testTables.lock} WHERE subject = $1`, [
-        'test-subject',
-      ]);
+      const lockResult = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
+        ['test-subject'],
+      );
       const hierarchyResult = await client.query(
-        `SELECT * FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['test-subject'],
       );
 
@@ -252,6 +264,7 @@ describe('Cleanup Operations', () => {
     it('should succeed when cleaning up non-existent subject', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -267,6 +280,7 @@ describe('Cleanup Operations', () => {
     it('should not affect other workflows', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -285,15 +299,18 @@ describe('Cleanup Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
 
-      const subject1 = await client.query(`SELECT * FROM ${testTables.state} WHERE subject = $1`, [
-        'subject-1',
-      ]);
-      const subject2 = await client.query(`SELECT * FROM ${testTables.state} WHERE subject = $1`, [
-        'subject-2',
-      ]);
-      const subject3 = await client.query(`SELECT * FROM ${testTables.state} WHERE subject = $1`, [
-        'subject-3',
-      ]);
+      const subject1 = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
+        ['subject-1'],
+      );
+      const subject2 = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
+        ['subject-2'],
+      );
+      const subject3 = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
+        ['subject-3'],
+      );
 
       await client.end();
 
@@ -307,6 +324,7 @@ describe('Cleanup Operations', () => {
     it('should handle cleanup of child workflow without affecting parent', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -329,11 +347,11 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const rootResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['root-subject'],
       );
       const childResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['child-subject'],
       );
 
@@ -348,6 +366,7 @@ describe('Cleanup Operations', () => {
     it('should handle cleanup of parent workflow without affecting children', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -370,11 +389,11 @@ describe('Cleanup Operations', () => {
       await client.connect();
 
       const rootResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['root-subject'],
       );
       const childResult = await client.query(
-        `SELECT * FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['child-subject'],
       );
 
@@ -391,6 +410,7 @@ describe('Cleanup Operations', () => {
     it('should handle multiple cleanup calls on same subject', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -407,9 +427,10 @@ describe('Cleanup Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
 
-      const result = await client.query(`SELECT * FROM ${testTables.state} WHERE subject = $1`, [
-        'test-subject',
-      ]);
+      const result = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
+        ['test-subject'],
+      );
 
       await client.end();
 
@@ -421,6 +442,7 @@ describe('Cleanup Operations', () => {
     it('should handle cleanup after workflow already removed', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -434,7 +456,9 @@ describe('Cleanup Operations', () => {
 
       const client = new Client({ connectionString });
       await client.connect();
-      await client.query(`DELETE FROM ${testTables.state} WHERE subject = $1`, ['test-subject']);
+      await client.query(`DELETE FROM ${testSchema}.${testTables.state} WHERE subject = $1`, [
+        'test-subject',
+      ]);
       await client.end();
 
       await expect(memory.cleanup('test-subject')).resolves.not.toThrow();

@@ -15,11 +15,6 @@ import {
 } from './handlers/weighted.average.resumable';
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
-const testTables = {
-  state: 'pgboss_test_state',
-  lock: 'pgboss_test_lock',
-  hierarchy: 'pgboss_test_hierarchy',
-};
 
 const TEST_EVENT_SOURCE = 'test.pgboss.source';
 
@@ -28,7 +23,6 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should successfully register a handler', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -49,7 +43,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should throw error when registering duplicate handler', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -72,7 +66,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should track multiple registered handlers in queues array', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -98,7 +92,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should create queue with recreateQueue option', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -121,7 +115,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should successfully setup workflow completion handler', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -146,7 +140,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should register completion queue with recreateQueue option', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -174,7 +168,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should throw error if onWorkflowComplete not called', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -202,7 +196,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should throw error if event source does not match workflow source', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -233,7 +227,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should throw error if target handler is not registered', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -262,7 +256,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should successfully dispatch valid event and return job ID', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -296,7 +290,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should execute average workflow and complete successfully', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -345,7 +339,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should execute weighted average resumable workflow', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -418,7 +412,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should invoke onHandlerNotFound callback when target handler does not exist', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -460,7 +454,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should invoke onDomainedEvent callback when event has domain field', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -510,7 +504,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should return stats for all registered queues', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -540,7 +534,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should show empty queues when no jobs are running', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-        tables: testTables,
+
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });

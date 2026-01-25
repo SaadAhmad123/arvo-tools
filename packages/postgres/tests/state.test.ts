@@ -5,6 +5,8 @@ import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
 
+const testSchema = 'arvopg';
+
 const testTables = {
   state: 'machine_memory_state',
   lock: 'machine_memory_lock',
@@ -30,6 +32,7 @@ describe('State Management - Read/Write Operations', () => {
   beforeEach(async () => {
     await connectPostgresMachineMemory({
       version: 1,
+      schema: testSchema,
       tables: testTables,
       config: {
         connectionString,
@@ -42,6 +45,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should return null for non-existent subject', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -56,6 +60,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should return data with version for existing subject', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -86,6 +91,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should create new workflow with prevData = null', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -110,6 +116,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should store execution_status correctly', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -126,7 +133,7 @@ describe('State Management - Read/Write Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT execution_status FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT execution_status FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
       await client.end();
@@ -139,6 +146,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should store parent_subject as null for root workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -155,7 +163,7 @@ describe('State Management - Read/Write Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT parent_subject FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT parent_subject FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['root-subject'],
       );
       await client.end();
@@ -168,6 +176,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should store parent_subject correctly for child workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -185,7 +194,7 @@ describe('State Management - Read/Write Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT parent_subject FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT parent_subject FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['child-subject'],
       );
       await client.end();
@@ -198,6 +207,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should store initiator when resolved', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -217,7 +227,7 @@ describe('State Management - Read/Write Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT initiator FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT initiator FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
       await client.end();
@@ -230,6 +240,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should store initiator as null when unresolved', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -249,7 +260,7 @@ describe('State Management - Read/Write Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT initiator FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT initiator FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
       await client.end();
@@ -262,6 +273,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should store source correctly', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -281,7 +293,7 @@ describe('State Management - Read/Write Operations', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT source FROM ${testTables.state} WHERE subject = $1`,
+        `SELECT source FROM ${testSchema}.${testTables.state} WHERE subject = $1`,
         ['test-subject'],
       );
       await client.end();
@@ -296,6 +308,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should update existing workflow and increment version', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -333,6 +346,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should throw error with stale version (optimistic locking)', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -363,6 +377,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should handle concurrent writes - second write fails', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -410,6 +425,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should handle complex nested JSONB objects', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -448,6 +464,7 @@ describe('State Management - Read/Write Operations', () => {
     it('should handle empty object', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });

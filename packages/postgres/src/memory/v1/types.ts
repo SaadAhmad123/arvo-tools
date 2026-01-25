@@ -9,6 +9,10 @@ import type { PostgressConnectionConfig } from '../types';
  */
 export type PostgressMachineMemoryV1Param = {
   /**
+   * The schema names of the tables to group them
+   */
+  schema: string;
+  /**
    * Names of the PostgreSQL tables used by the machine memory system.
    * These tables must exist in the database and conform to the expected schema.
    */

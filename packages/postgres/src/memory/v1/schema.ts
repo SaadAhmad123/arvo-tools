@@ -110,22 +110,23 @@ const tableSchema = {
 
 export const validateTable = async (
   client: PoolClient,
-  name: string,
-  schema: keyof typeof tableSchema,
+  schemaName: string,
+  tableName: string,
+  tableType: keyof typeof tableSchema,
 ) => {
   const query = `
     SELECT column_name, data_type, is_nullable
     FROM information_schema.columns
-    WHERE table_name = $1;
+    WHERE table_schema = $1 AND table_name = $2;
   `;
 
-  const { rows } = await client.query(query, [name]);
-  const expectedSchema = tableSchema[schema];
+  const { rows } = await client.query(query, [schemaName, tableName]);
+  const expectedSchema = tableSchema[tableType];
 
   if (rows.length === 0) {
     throw new Error(
       cleanString(`
-      Table '${name}' does not exist.
+      Table '${schemaName}.${tableName}' does not exist.
 
       Expected structure:
       ${expectedSchema.structure}
@@ -147,7 +148,7 @@ export const validateTable = async (
   if (!result.success) {
     throw new Error(
       cleanString(`
-        Table '${name}' structure validation failed.
+        Table '${schemaName}.${tableName}' structure validation failed.
 
         Expected structure:
         ${expectedSchema.structure}
