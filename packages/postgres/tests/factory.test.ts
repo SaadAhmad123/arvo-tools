@@ -11,6 +11,8 @@ const testDbConfig = {
   database: process.env.ARVO_POSTGRES_DB || 'arvo',
 };
 
+const testSchema = 'arvopg';
+
 const testTables = {
   state: 'machine_memory_state',
   lock: 'machine_memory_lock',
@@ -21,6 +23,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
   beforeAll(async () => {
     await connectPostgresMachineMemory({
       version: 1,
+      schema: testSchema,
       tables: testTables,
       config: {
         connectionString,
@@ -32,6 +35,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
   beforeEach(async () => {
     await connectPostgresMachineMemory({
       version: 1,
+      schema: testSchema,
       tables: testTables,
       config: {
         connectionString,
@@ -44,6 +48,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should successfully connect and return valid memory instance', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,
@@ -65,6 +70,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should successfully connect with host, port, user, password, database', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           host: testDbConfig.host,
@@ -87,6 +93,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should validate all three tables exist', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,
@@ -100,7 +107,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should fail if state table is missing', async () => {
       const client = new Client({ connectionString: connectionString });
       await client.connect();
-      await client.query(`DROP TABLE IF EXISTS ${testTables.state} CASCADE;`);
+      await client.query(`DROP TABLE IF EXISTS ${testSchema}.${testTables.state} CASCADE;`);
       await client.end();
 
       await expect(
@@ -117,7 +124,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should fail if lock table is missing', async () => {
       const client = new Client({ connectionString: connectionString });
       await client.connect();
-      await client.query(`DROP TABLE IF EXISTS ${testTables.lock} CASCADE;`);
+      await client.query(`DROP TABLE IF EXISTS ${testSchema}.${testTables.lock} CASCADE;`);
       await client.end();
 
       await expect(
@@ -134,7 +141,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should fail if hierarchy table is missing', async () => {
       const client = new Client({ connectionString: connectionString });
       await client.connect();
-      await client.query(`DROP TABLE IF EXISTS ${testTables.hierarchy} CASCADE;`);
+      await client.query(`DROP TABLE IF EXISTS ${testSchema}.${testTables.hierarchy} CASCADE;`);
       await client.end();
 
       await expect(
@@ -151,7 +158,9 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should fail if column has wrong data type', async () => {
       const client = new Client({ connectionString: connectionString });
       await client.connect();
-      await client.query(`ALTER TABLE ${testTables.state} ALTER COLUMN version TYPE VARCHAR(255);`);
+      await client.query(
+        `ALTER TABLE ${testSchema}.${testTables.state} ALTER COLUMN version TYPE VARCHAR(255);`,
+      );
       await client.end();
 
       await expect(
@@ -168,7 +177,9 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should fail if required column is missing', async () => {
       const client = new Client({ connectionString: connectionString });
       await client.connect();
-      await client.query(`ALTER TABLE ${testTables.state} DROP COLUMN execution_status;`);
+      await client.query(
+        `ALTER TABLE ${testSchema}.${testTables.state} DROP COLUMN execution_status;`,
+      );
       await client.end();
 
       await expect(
@@ -187,6 +198,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should close connection pool successfully', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,
@@ -218,6 +230,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should accept connection pool config', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,
@@ -234,6 +247,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should accept lock config', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,
@@ -253,6 +267,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should accept enableCleanup flag', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,
@@ -267,6 +282,7 @@ describe('connectPostgresMachineMemory - Connection Factory Tests', () => {
     it('should accept enableOtel flag', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString: connectionString,

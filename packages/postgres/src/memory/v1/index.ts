@@ -28,6 +28,7 @@ type VersionedData<T extends Record<string, unknown>> = T & {
 export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
   implements IMachineMemory<T>
 {
+  private readonly dbSchemaName: PostgressMachineMemoryV1Param['schema'];
   private readonly tables: PostgressMachineMemoryV1Param['tables'];
   private readonly lockConfig: Required<
     NonNullable<NonNullable<PostgressMachineMemoryV1Param['config']>['lockConfig']>
@@ -41,6 +42,7 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
   private readonly pool: Pool;
 
   constructor(param: PostgressMachineMemoryV1Param) {
+    this.dbSchemaName = param.schema;
     this.tables = param.tables;
     this.lockConfig = {
       maxRetries: param.config?.lockConfig?.maxRetries ?? 3,
@@ -90,9 +92,9 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
     const client = await this.pool.connect();
     try {
       await Promise.all([
-        validateTable(client, this.tables.state, 'state'),
-        validateTable(client, this.tables.lock, 'lock'),
-        validateTable(client, this.tables.hierarchy, 'hierarchy'),
+        validateTable(client, this.dbSchemaName, this.tables.state, 'state'),
+        validateTable(client, this.dbSchemaName, this.tables.lock, 'lock'),
+        validateTable(client, this.dbSchemaName, this.tables.hierarchy, 'hierarchy'),
       ]);
     } finally {
       client.release();
@@ -119,7 +121,11 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const client = await this.pool.connect();
         try {
           const result = await client.query(
-            format('SELECT data, version FROM %I WHERE subject = $1', this.tables.state),
+            format(
+              'SELECT data, version FROM %I.%I WHERE subject = $1',
+              this.dbSchemaName,
+              this.tables.state,
+            ),
             [id],
           );
           if (!result.rows.length) {
@@ -168,7 +174,8 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
 
               await client.query(
                 format(
-                  'INSERT INTO %I (subject, data, version, execution_status, parent_subject, initiator, source, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, $5, $6, NOW(), NOW())',
+                  'INSERT INTO %I.%I (subject, data, version, execution_status, parent_subject, initiator, source, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, $5, $6, NOW(), NOW())',
+                  this.dbSchemaName,
                   this.tables.state,
                 ),
                 [
@@ -185,14 +192,19 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
                 rootSubject = id;
               } else {
                 const parentResult = await client.query(
-                  format('SELECT root_subject FROM %I WHERE subject = $1', this.tables.hierarchy),
+                  format(
+                    'SELECT root_subject FROM %I.%I WHERE subject = $1',
+                    this.dbSchemaName,
+                    this.tables.hierarchy,
+                  ),
                   [resolvedParentSubject],
                 );
                 rootSubject = parentResult.rows[0]?.root_subject ?? id;
               }
               await client.query(
                 format(
-                  'INSERT INTO %I (subject, parent_subject, root_subject, created_at) VALUES ($1, $2, $3, NOW())',
+                  'INSERT INTO %I.%I (subject, parent_subject, root_subject, created_at) VALUES ($1, $2, $3, NOW())',
+                  this.dbSchemaName,
                   this.tables.hierarchy,
                 ),
                 [id, resolvedParentSubject, rootSubject],
@@ -213,7 +225,8 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
           span?.setAttribute('version', newVersion);
           const result = await client.query(
             format(
-              'UPDATE %I SET data = $1, version = $2, execution_status = $3, updated_at = NOW() WHERE subject = $4 AND version = $5',
+              'UPDATE %I.%I SET data = $1, version = $2, execution_status = $3, updated_at = NOW() WHERE subject = $4 AND version = $5',
+              this.dbSchemaName,
               this.tables.state,
             ),
             [JSON.stringify(data), newVersion, resolvedExectionStatus, id, currentVersion],
@@ -255,15 +268,17 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
               const result = await client.query(
                 format(
                   `WITH arvo_lock_time AS (SELECT NOW() as now)
-            INSERT INTO %I (subject, locked_at, expires_at, created_at)
-            SELECT $1, now, now + ($2 || ' milliseconds')::INTERVAL, now FROM arvo_lock_time
-            ON CONFLICT (subject)
-            DO UPDATE SET
-              locked_at = (SELECT now FROM arvo_lock_time),
-              expires_at = (SELECT now FROM arvo_lock_time) + ($2 || ' milliseconds')::INTERVAL
-            WHERE %I.expires_at < (SELECT now FROM arvo_lock_time)
-            RETURNING subject`,
+                  INSERT INTO %I.%I (subject, locked_at, expires_at, created_at)
+                  SELECT $1, now, now + ($2 || ' milliseconds')::INTERVAL, now FROM arvo_lock_time
+                  ON CONFLICT (subject)
+                  DO UPDATE SET
+                    locked_at = (SELECT now FROM arvo_lock_time),
+                    expires_at = (SELECT now FROM arvo_lock_time) + ($2 || ' milliseconds')::INTERVAL
+                  WHERE %I.%I.expires_at < (SELECT now FROM arvo_lock_time)
+                  RETURNING subject`,
+                  this.dbSchemaName,
                   this.tables.lock,
+                  this.dbSchemaName,
                   this.tables.lock,
                 ),
                 [id, this.lockConfig.ttlMs],
@@ -311,7 +326,10 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         span?.setAttribute('subject', id);
         const client = await this.pool.connect();
         try {
-          await client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.lock), [id]);
+          await client.query(
+            format('DELETE FROM %I.%I WHERE subject = $1', this.dbSchemaName, this.tables.lock),
+            [id],
+          );
           return true;
         } catch (error) {
           span?.setStatus({
@@ -343,9 +361,22 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         try {
           await client.query('BEGIN');
           await Promise.all([
-            client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.state), [id]),
-            client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.lock), [id]),
-            client.query(format('DELETE FROM %I WHERE subject = $1', this.tables.hierarchy), [id]),
+            client.query(
+              format('DELETE FROM %I.%I WHERE subject = $1', this.dbSchemaName, this.tables.state),
+              [id],
+            ),
+            client.query(
+              format('DELETE FROM %I.%I WHERE subject = $1', this.dbSchemaName, this.tables.lock),
+              [id],
+            ),
+            client.query(
+              format(
+                'DELETE FROM %I.%I WHERE subject = $1',
+                this.dbSchemaName,
+                this.tables.hierarchy,
+              ),
+              [id],
+            ),
           ]);
           await client.query('COMMIT');
         } catch (error) {
@@ -388,7 +419,11 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const client = await this.pool.connect();
         try {
           const result = await client.query(
-            format('SELECT subject FROM %I WHERE root_subject = $1', this.tables.hierarchy),
+            format(
+              'SELECT subject FROM %I.%I WHERE root_subject = $1',
+              this.dbSchemaName,
+              this.tables.hierarchy,
+            ),
             [rootSubject],
           );
           const subjects = result.rows
@@ -446,7 +481,11 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const client = await this.pool.connect();
         try {
           const result = await client.query(
-            format('SELECT root_subject FROM %I WHERE subject = $1', this.tables.hierarchy),
+            format(
+              'SELECT root_subject FROM %I.%I WHERE subject = $1',
+              this.dbSchemaName,
+              this.tables.hierarchy,
+            ),
             [subject],
           );
           if (!result.rows.length) {

@@ -4,6 +4,7 @@ import format from 'pg-format';
 export async function createTableV1(
   connectionString: string,
   config: {
+    schema: string;
     tables: {
       state: string;
       lock: string;
@@ -18,14 +19,13 @@ export async function createTableV1(
 
   try {
     if (config?.dropIfExist) {
-      await client.query(format('DROP TABLE IF EXISTS %I CASCADE;', config.tables.state));
-      await client.query(format('DROP TABLE IF EXISTS %I CASCADE;', config.tables.lock));
-      await client.query(format('DROP TABLE IF EXISTS %I CASCADE;', config.tables.hierarchy));
+      await client.query(format('DROP SCHEMA IF EXISTS %I CASCADE', config.schema));
     }
+    await client.query(format('CREATE SCHEMA IF NOT EXISTS %I', config.schema));
 
     await client.query(
       format(
-        `CREATE TABLE IF NOT EXISTS %I (
+        `CREATE TABLE IF NOT EXISTS %I.%I (
           subject VARCHAR(255) PRIMARY KEY,
           data JSONB NOT NULL,
           version INTEGER NOT NULL DEFAULT 1,
@@ -36,30 +36,33 @@ export async function createTableV1(
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
+        config.schema,
         config.tables.state,
       ),
     );
 
     await client.query(
       format(
-        `CREATE TABLE IF NOT EXISTS %I (
+        `CREATE TABLE IF NOT EXISTS %I.%I (
           subject VARCHAR(255) PRIMARY KEY,
           locked_at TIMESTAMP NOT NULL,
           expires_at TIMESTAMP NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
+        config.schema,
         config.tables.lock,
       ),
     );
 
     await client.query(
       format(
-        `CREATE TABLE IF NOT EXISTS %I (
+        `CREATE TABLE IF NOT EXISTS %I.%I (
           subject VARCHAR(255) PRIMARY KEY,
           parent_subject VARCHAR(255),
           root_subject VARCHAR(255) NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )`,
+        config.schema,
         config.tables.hierarchy,
       ),
     );

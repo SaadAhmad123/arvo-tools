@@ -4,6 +4,8 @@ import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
 
+const testSchema = 'arvopg';
+
 const testTables = {
   state: 'machine_memory_state',
   lock: 'machine_memory_lock',
@@ -14,6 +16,7 @@ describe('Distributed Locking', () => {
   beforeEach(async () => {
     await connectPostgresMachineMemory({
       version: 1,
+      schema: testSchema,
       tables: testTables,
       config: {
         connectionString,
@@ -26,6 +29,7 @@ describe('Distributed Locking', () => {
     it('should acquire lock on unlocked subject', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -40,6 +44,7 @@ describe('Distributed Locking', () => {
     it('should fail to acquire lock on already locked subject', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -62,6 +67,7 @@ describe('Distributed Locking', () => {
     it('should respect maxRetries configuration', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -88,6 +94,7 @@ describe('Distributed Locking', () => {
     it('should use exponential backoff for retries', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -117,6 +124,7 @@ describe('Distributed Locking', () => {
     it('should reacquire lock after TTL expiration', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -140,6 +148,7 @@ describe('Distributed Locking', () => {
     it('should respect custom TTL configuration', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -167,6 +176,7 @@ describe('Distributed Locking', () => {
     it('should verify lock expiration in database', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -182,7 +192,7 @@ describe('Distributed Locking', () => {
       await client.connect();
 
       const beforeExpiry = await client.query(
-        `SELECT expires_at > NOW() as is_locked FROM ${testTables.lock} WHERE subject = $1`,
+        `SELECT expires_at > NOW() as is_locked FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
         ['test-subject'],
       );
       expect(beforeExpiry.rows[0].is_locked).toBe(true);
@@ -190,7 +200,7 @@ describe('Distributed Locking', () => {
       await new Promise((resolve) => setTimeout(resolve, 150));
 
       const afterExpiry = await client.query(
-        `SELECT expires_at > NOW() as is_locked FROM ${testTables.lock} WHERE subject = $1`,
+        `SELECT expires_at > NOW() as is_locked FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
         ['test-subject'],
       );
       expect(afterExpiry.rows[0].is_locked).toBe(false);
@@ -204,6 +214,7 @@ describe('Distributed Locking', () => {
     it('should unlock successfully', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -215,9 +226,10 @@ describe('Distributed Locking', () => {
 
       const client = new Client({ connectionString });
       await client.connect();
-      const result = await client.query(`SELECT * FROM ${testTables.lock} WHERE subject = $1`, [
-        'test-subject',
-      ]);
+      const result = await client.query(
+        `SELECT * FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
+        ['test-subject'],
+      );
       await client.end();
 
       expect(result.rows.length).toBe(0);
@@ -228,6 +240,7 @@ describe('Distributed Locking', () => {
     it('should allow relock after unlock', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -245,6 +258,7 @@ describe('Distributed Locking', () => {
     it('should be idempotent when unlocking non-existent lock', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -259,6 +273,7 @@ describe('Distributed Locking', () => {
     it('should handle multiple unlock calls', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -279,6 +294,7 @@ describe('Distributed Locking', () => {
     it('should only allow one lock acquisition when concurrent', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -307,6 +323,7 @@ describe('Distributed Locking', () => {
     it('should handle multiple subjects independently', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -325,6 +342,7 @@ describe('Distributed Locking', () => {
     it('should allow sequential locks after unlock', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -349,6 +367,7 @@ describe('Distributed Locking', () => {
     it('should store lock timestamps correctly', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: {
           connectionString,
@@ -363,7 +382,7 @@ describe('Distributed Locking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT locked_at, expires_at, created_at FROM ${testTables.lock} WHERE subject = $1`,
+        `SELECT locked_at, expires_at, created_at FROM ${testSchema}.${testTables.lock} WHERE subject = $1`,
         ['test-subject'],
       );
       await client.end();

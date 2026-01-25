@@ -12,6 +12,10 @@ export type ConnectPostgresMachineMemoryParam = {
    */
   version: 1;
   /**
+   * The schema name for grouping the tables
+   */
+  schema?: string;
+  /**
    * Names of the PostgreSQL tables used by the machine memory.
    * These tables must exist and match the expected schema structure.
    */

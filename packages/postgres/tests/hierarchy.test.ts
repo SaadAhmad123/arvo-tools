@@ -5,6 +5,8 @@ import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../
 
 const connectionString = process.env.ARVO_POSTGRES_CONNECTION_STRING ?? '';
 
+const testSchema = 'arvopg';
+
 const testTables = {
   state: 'machine_memory_state',
   lock: 'machine_memory_lock',
@@ -27,6 +29,7 @@ describe('Hierarchy Tracking', () => {
   beforeEach(async () => {
     await connectPostgresMachineMemory({
       version: 1,
+      schema: testSchema,
       tables: testTables,
       config: {
         connectionString,
@@ -39,6 +42,7 @@ describe('Hierarchy Tracking', () => {
     it('should create hierarchy with root_subject = subject for root workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -52,7 +56,7 @@ describe('Hierarchy Tracking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT root_subject FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT root_subject FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['root-subject'],
       );
       await client.end();
@@ -66,6 +70,7 @@ describe('Hierarchy Tracking', () => {
     it('should have parent_subject = null for root workflow in hierarchy', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -79,7 +84,7 @@ describe('Hierarchy Tracking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT parent_subject FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT parent_subject FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['root-subject'],
       );
       await client.end();
@@ -93,6 +98,7 @@ describe('Hierarchy Tracking', () => {
     it('should inherit root_subject from parent for child workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -113,7 +119,7 @@ describe('Hierarchy Tracking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT root_subject FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT root_subject FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['child-subject'],
       );
       await client.end();
@@ -127,6 +133,7 @@ describe('Hierarchy Tracking', () => {
     it('should set parent_subject correctly for child workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -147,7 +154,7 @@ describe('Hierarchy Tracking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT parent_subject FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT parent_subject FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['child-subject'],
       );
       await client.end();
@@ -161,6 +168,7 @@ describe('Hierarchy Tracking', () => {
     it('should track root_subject correctly for grandchild (3 levels)', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -184,7 +192,7 @@ describe('Hierarchy Tracking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT root_subject, parent_subject FROM ${testTables.hierarchy} WHERE subject = $1`,
+        `SELECT root_subject, parent_subject FROM ${testSchema}.${testTables.hierarchy} WHERE subject = $1`,
         ['grandchild-subject'],
       );
       await client.end();
@@ -201,6 +209,7 @@ describe('Hierarchy Tracking', () => {
     it('should return root subject for child workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -224,6 +233,7 @@ describe('Hierarchy Tracking', () => {
     it('should return itself for root workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -240,6 +250,7 @@ describe('Hierarchy Tracking', () => {
     it('should return null for non-existent subject', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -254,6 +265,7 @@ describe('Hierarchy Tracking', () => {
     it('should return root for deeply nested workflow', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -293,6 +305,7 @@ describe('Hierarchy Tracking', () => {
     it('should return all children excluding root itself', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -326,6 +339,7 @@ describe('Hierarchy Tracking', () => {
     it('should return empty array for childless root', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -342,6 +356,7 @@ describe('Hierarchy Tracking', () => {
     it('should return all descendants in multi-level tree', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -399,6 +414,7 @@ describe('Hierarchy Tracking', () => {
     it('should return empty array for non-existent root', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -415,6 +431,7 @@ describe('Hierarchy Tracking', () => {
     it('should share same root_subject for multiple siblings', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -445,7 +462,7 @@ describe('Hierarchy Tracking', () => {
       const client = new Client({ connectionString });
       await client.connect();
       const result = await client.query(
-        `SELECT subject, root_subject FROM ${testTables.hierarchy} WHERE parent_subject = $1`,
+        `SELECT subject, root_subject FROM ${testSchema}.${testTables.hierarchy} WHERE parent_subject = $1`,
         ['root-subject'],
       );
       await client.end();
@@ -459,6 +476,7 @@ describe('Hierarchy Tracking', () => {
     it('should maintain correct parent-child relationships with multiple siblings', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
@@ -507,6 +525,7 @@ describe('Hierarchy Tracking', () => {
     it('should isolate different workflow trees', async () => {
       const memory = await connectPostgresMachineMemory<TestContext>({
         version: 1,
+        schema: testSchema,
         tables: testTables,
         config: { connectionString },
       });
