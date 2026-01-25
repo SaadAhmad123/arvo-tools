@@ -1,5 +1,11 @@
 # @arvo-tools/postgres
 
+## 1.3.0
+
+### Minor Changes
+
+- 988737f: Added schema based grouping for tables
+
 ## 1.2.2
 
 ### Patch Changes
