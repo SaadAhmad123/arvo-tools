@@ -1,5 +1,11 @@
 # @arvo-tools/postgres
 
+## 1.3.1
+
+### Patch Changes
+
+- 1301df8: Updated the TS compile target to ES2022 for compatibility reasons
+
 ## 1.3.0
 
 ### Minor Changes
