@@ -40,7 +40,7 @@ export type AgentState = {
     max: number;
     current: number;
   };
-  enabledTools: Record<string, boolean>,
+  enabledTools: Record<string, boolean>;
   awaitingToolCalls: Record<string, { type: string; data: Record<string, unknown> | null }>;
   totalExecutionUnits: number;
   totalTokenUsage: {
