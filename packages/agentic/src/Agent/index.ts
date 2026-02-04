@@ -40,6 +40,7 @@ export type AgentState = {
     max: number;
     current: number;
   };
+  enabledTools: Record<string, boolean>,
   awaitingToolCalls: Record<string, { type: string; data: Record<string, unknown> | null }>;
   totalExecutionUnits: number;
   totalTokenUsage: {
@@ -298,6 +299,7 @@ export const createArvoAgent = <
               const resumableContextToPersist: AgentState = {
                 initEventAccessControl: input.accesscontrol ?? null,
                 currentSubject: input.subject,
+                enabledTools: llmContext?.enabledTools ?? {},
                 system: llmContext?.system ?? null,
                 messages: response.messages,
                 toolInteractions: response.toolInteractions,

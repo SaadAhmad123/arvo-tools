@@ -245,8 +245,12 @@ export type AgentContextBuilder<
   tools: AgentLLMContext<TServiceContract, TTools>['tools'];
   /** The Otel span to add logs to */
   span: Span;
+}) => PromiseAble<Partial<
+  Pick<AgentLLMContext<TServiceContract>, 'messages' | 'system'> & {
+    enabledTools: Record<string, boolean>;
+  }
   // biome-ignore lint/suspicious/noConfusingVoidType: This is better for UX
-}) => PromiseAble<Partial<Pick<AgentLLMContext<TServiceContract>, 'messages' | 'system'>> | void>;
+> | void>;
 
 /**
  * The "Output Validation" Hook.
