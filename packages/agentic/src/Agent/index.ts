@@ -16,6 +16,7 @@ import { v4 } from 'uuid';
 import type { AgentInternalTool } from '../AgentTool/types.js';
 import type { PermissionManagerContext } from '../interfaces.permission.manager.js';
 import type { NonEmptyArray, OtelInfoType } from '../types.js';
+import { AgentDefaults } from './AgentDefaults.js';
 import { agentLoop } from './agentLoop.js';
 import type { AgentEventStreamer } from './stream/types.js';
 import { createTimestamp } from './stream/utils.js';
@@ -26,6 +27,7 @@ import type {
   CreateArvoAgentParam,
 } from './types.js';
 import {
+  applyToolEnablement,
   generateAgentInternalToolDefinitions,
   generateMcpToolDefinitions,
   generateServiceToolDefinitions,
@@ -219,8 +221,10 @@ export const createArvoAgent = <
           };
 
           try {
-            const contextBuilder = handler[ver as ArvoSemanticVersion]?.context;
-            const outputBuilder = handler[ver as ArvoSemanticVersion]?.output;
+            const contextBuilder =
+              handler[ver as ArvoSemanticVersion]?.context ?? AgentDefaults.CONTEXT_BUILDER();
+            const outputBuilder =
+              handler[ver as ArvoSemanticVersion]?.output ?? AgentDefaults.OUTPUT_BUILDER;
             const thisVersionLlmIntegration = handler[ver as ArvoSemanticVersion]?.llm ?? llm;
             const versionLlmResponseType =
               handler[ver as ArvoSemanticVersion]?.llmResponseType ?? llmResponseType;
@@ -277,7 +281,10 @@ export const createArvoAgent = <
                         },
                       ]
                   ).map((item) => ({ ...item, seenCount: item.seenCount ?? 0 })) as AgentMessage[],
-                  tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                  tools: applyToolEnablement(
+                    Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                    llmContext?.enabledTools ?? {},
+                  ),
                   outputFormat,
                   outputBuilder: outputBuilder,
                   llmResponseType: versionLlmResponseType,
@@ -414,7 +421,10 @@ export const createArvoAgent = <
                 initLifecycle: 'tool_result',
                 system: resumedContext.system ?? null,
                 messages: messages,
-                tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                tools: applyToolEnablement(
+                  Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                  resumedContext.enabledTools,
+                ),
                 outputFormat,
                 outputBuilder: outputBuilder,
                 llmResponseType: versionLlmResponseType,

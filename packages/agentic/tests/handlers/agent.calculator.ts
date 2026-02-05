@@ -28,7 +28,10 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
       complete: AgentDefaults.COMPLETE_SCHEMA,
     },
     '2.0.0': {
-      init: AgentDefaults.INIT_MULTIMODAL_SCHEMA,
+      init: z.object({
+        message: z.string(),
+        enableHIL: z.boolean().optional().default(true),
+      }),
       complete: z.object({
         calculatorOutput: z
           .string()
@@ -56,9 +59,7 @@ export const calculatorAgent: EventHandlerFactory<{
 }> = ({ memory, permissionManager }) =>
   createArvoAgent({
     contracts: {
-      // Event driven / Async function call interface of the agent
       self: calculatorAgentContract,
-      // Event driven services/agents/humans in the event mesh that Agent is allowed to talk to.
       services: {
         calculator: {
           contract: calculatorContract.version('1.0.0'),
@@ -69,7 +70,6 @@ export const calculatorAgent: EventHandlerFactory<{
         },
       },
     },
-    // Inline - Internal tools the agent can leverage
     tools: {
       selfTalk: createAgentTool({
         name: 'tool.self.talk',
@@ -82,7 +82,6 @@ export const calculatorAgent: EventHandlerFactory<{
         fn: () => ({ recorded: true }),
       }),
     },
-    // MCP tools that the agent can leverage
     mcp: new MCPClient({
       url: 'https://mcp.docs.astro.build/mcp',
     }),
@@ -95,7 +94,6 @@ export const calculatorAgent: EventHandlerFactory<{
     permissionManager,
     handler: {
       '1.0.0': {
-        // Dynamic context building for the agent when it is initialised.
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
@@ -120,23 +118,26 @@ export const calculatorAgent: EventHandlerFactory<{
         llm: anthropicLLMIntegration(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }), {
           invocationParam: { stream: true },
         }),
-        context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
-          cleanString(`
+        context: AgentDefaults.CONTEXT_BUILDER(({ tools, input }) => ({
+          system: cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
             If a file is available to you then read it promptly and put all the relevant information from the file for your task in your note by calling tool ${tools.tools.selfTalk.name}.
             Putting the content of the files in tool ${tools.tools.selfTalk.name} is paramount because you can only see the file content once in your lifetime.
             For the tool ${tools.tools.selfTalk.name} you can be as verbose as you feel is necessary so that you can resolve the users request fully and confidently.
             Then, you must create a plan to resolve the request and get approval from the tool ${tools.services.humanReview.name}. You are banned from calling any tool, 
             other than ${tools.tools.selfTalk.name}, before
-            getting explicit approval from the tool ${tools.services.humanReview.name}
+            getting explicit approval from the tool ${tools.services.humanReview.name} (if avialable)
             If the user requests for information regarding astro, the use the relevant tools.
             If the user requests for a calculations, then use tool ${tools.services.calculator.name}.
             Then, you must use the tool ${tools.services.calculator.name} to perform the calculations.
 
-            Tip: You can call tools ${tools.tools.selfTalk.name} and ${tools.services.humanReview.name} in
+            Tip: You can call tools ${tools.tools.selfTalk.name} and ${tools.services.humanReview.name} (if avialable) in
             parallel if you can.
           `),
-        ),
+          enabledTools: {
+            [tools.services.humanReview.name]: input.data.enableHIL,
+          },
+        })),
         output: (param) => {
           if (param.type === 'json') {
             const { error, data } = param.outputFormat.safeParse(param.parsedContent ?? {});
@@ -163,6 +164,9 @@ export const calculatorAgent: EventHandlerFactory<{
             If the user requests for information regarding astro, the use the relevant tools.
             If the user requests for a calculations, then use tool ${tools.services.calculator.name}.
             Then, you must use the tool ${tools.services.calculator.name} to perform the calculations.
+            
+            Critical: You must not call the ${tools.services.calculator.name} or ${tools.mcp.search_astro_docs.name} before getting explicit
+            approval from the tools ${tools.services.humanReview.name}.
 
             Tip: You can call tools ${tools.tools.selfTalk.name} and ${tools.services.humanReview.name} in
             parallel if you can.

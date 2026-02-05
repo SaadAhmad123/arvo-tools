@@ -40,7 +40,7 @@ const tests: ArvoTestSuite = {
   },
   cases: [
     {
-      name: 'should just simply respond',
+      name: 'should just simply respond with human in loop',
       steps: [
         {
           input: () =>
@@ -82,6 +82,30 @@ const tests: ArvoTestSuite = {
               data: {
                 response: 'approved',
               },
+            }),
+          expectedEvents: (events) => {
+            expect(events).toHaveLength(1);
+            expect(events[0]?.type).toBe(calculatorAgentContract.metadata.completeEventType);
+            return true;
+          },
+        },
+      ],
+    },
+    {
+      name: 'should just respond without human in loop',
+      steps: [
+        {
+          input: () =>
+            createArvoEventFactory(calculatorAgentContract.version('2.0.0')).accepts({
+              source: TEST_EVENT_SOURCE,
+              data: {
+                message: cleanString(`
+                  What is x in 2x+5=67.
+                `),
+                enableHIL: false,
+                parentSubject$$: null,
+              },
+              accesscontrol: 'xyz',
             }),
           expectedEvents: (events) => {
             expect(events).toHaveLength(1);

@@ -483,6 +483,13 @@ export type CreateArvoAgentParam<
        *       seenCount: 0
        *     }
        *   ]
+       *   // By default all the tools are enabled. Tools can be disabled
+       *   // by explicitly setting them as false. Use this only when you
+       *   // want to limit tool access for the agent based on the input event.
+       *   // Otherwise, this is an optional field
+       *   enabledTools: {
+       *      [tools.services.billing.name]: input.data.isBillingOnly
+       *   }
        * })
        * ```
        */
