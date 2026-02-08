@@ -39,27 +39,25 @@ export const dataUrlString = (allowedMimeTypes: string[]) =>
     },
   );
 
-const initSchema = z
-  .object({
-    message: z.string().describe('The input message to the agent'),
-  })
+const initSchema = z.object({
+  message: z.string().describe('The input message to the agent'),
+});
 
-const initMultiModalSchema = z
-  .object({
-    message: z.string().describe('The input message to the agent'),
-    imageBase64: dataUrlString(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
-      .array()
-      .optional()
-      .describe(
-        'An optional list of base64 image strings to read. An AI Agent must not send data via this field',
-      ),
-    pdfBase64: dataUrlString(['application/pdf'])
-      .array()
-      .optional()
-      .describe(
-        'An optional list of base64 pdfs to read. An AI Agent must not send data via this field',
-      ),
-  })
+const initMultiModalSchema = z.object({
+  message: z.string().describe('The input message to the agent'),
+  imageBase64: dataUrlString(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+    .array()
+    .optional()
+    .describe(
+      'An optional list of base64 image strings to read. An AI Agent must not send data via this field',
+    ),
+  pdfBase64: dataUrlString(['application/pdf'])
+    .array()
+    .optional()
+    .describe(
+      'An optional list of base64 pdfs to read. An AI Agent must not send data via this field',
+    ),
+});
 
 /**
  * Default schemas and builders for common agent patterns.
@@ -131,9 +129,7 @@ export const AgentDefaults = {
     async (param) => {
       let messages: AgentMessage[] = [];
 
-      if (
-        initMultiModalSchema.safeParse(param.input.data).success
-      ) {
+      if (initMultiModalSchema.safeParse(param.input.data).success) {
         messages = [
           {
             role: 'user',
