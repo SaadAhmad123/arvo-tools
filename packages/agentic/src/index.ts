@@ -1,11 +1,12 @@
 export * as Anthropic from '@anthropic-ai/sdk';
 export * as OpenAI from 'openai';
-export { AgentState, createArvoAgent } from './Agent';
+export { createArvoAgent } from './Agent';
 export { AgentDefaults } from './Agent/AgentDefaults';
 export {
   AgentMediaContentSchema,
   AgentMessageContentSchema,
   AgentMessageSchema,
+  AgentStateSchema,
   AgentTextContentSchema,
   AgentToolCallContentSchema,
   AgentToolResultContentSchema,
@@ -14,12 +15,14 @@ export { AgentStreamEventSchema } from './Agent/stream/schema';
 export type { AgentStreamListener } from './Agent/stream/types';
 export type {
   AgentContextBuilder,
+  AgentInferenceConfiguration,
   AgentLLMContext,
   AgentMediaContent,
   AgentMessage,
   AgentMessageContent,
   AgentOutputBuilder,
   AgentServiceContract,
+  AgentState,
   AgentTextContent,
   AgentToolCallContent,
   AgentToolDefinition,
@@ -27,6 +30,8 @@ export type {
   AnyArvoContract,
   AnyArvoOrchestratorContract,
   CreateArvoAgentParam,
+  PostInferenceHook,
+  PreInferenceHook,
 } from './Agent/types';
 export {
   setOpenInferenceInputAttr,

@@ -6,6 +6,7 @@ import { OpenAI } from 'openai';
 import z from 'zod';
 import {
   AgentDefaults,
+  type AgentInferenceConfiguration,
   anthropicLLMIntegration,
   createAgentTool,
   createArvoAgent,
@@ -56,7 +57,8 @@ export const calculatorAgentContract = createArvoOrchestratorContract({
 export const calculatorAgent: EventHandlerFactory<{
   memory: IMachineMemory<Record<string, unknown>>;
   permissionManager?: IPermissionManager;
-}> = ({ memory, permissionManager }) =>
+  hooks?: AgentInferenceConfiguration['hooks'];
+}> = ({ memory, permissionManager, hooks }) =>
   createArvoAgent({
     contracts: {
       self: calculatorAgentContract,
@@ -85,7 +87,10 @@ export const calculatorAgent: EventHandlerFactory<{
     mcp: new MCPClient({
       url: 'https://mcp.docs.astro.build/mcp',
     }),
-    llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
+    inferenceConfig: {
+      llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
+      hooks,
+    },
     memory,
     onStream: async ({ type, data }) => {
       if (!(type === 'agent.tool.request.delegation')) return;
@@ -114,10 +119,12 @@ export const calculatorAgent: EventHandlerFactory<{
         output: AgentDefaults.OUTPUT_BUILDER,
       },
       '2.0.0': {
-        llmResponseType: 'json',
-        llm: anthropicLLMIntegration(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }), {
-          invocationParam: { stream: true },
-        }),
+        inferenceConfig: {
+          responseType: 'json',
+          llm: anthropicLLMIntegration(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }), {
+            invocationParam: { stream: true },
+          }),
+        },
         context: AgentDefaults.CONTEXT_BUILDER(({ tools, input }) => ({
           system: cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.
@@ -151,7 +158,9 @@ export const calculatorAgent: EventHandlerFactory<{
           services.calculator.name,
           mcp.search_astro_docs.name,
         ],
-        llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
+        inferenceConfig: {
+          llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY })),
+        },
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
             You are a calculator agent as well as a astro documentation search agent and you must calculate the expression to the best of your abilities.

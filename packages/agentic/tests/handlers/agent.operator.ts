@@ -55,10 +55,11 @@ export const operatorAgent: EventHandlerFactory<{
         return;
       console.log(JSON.stringify({ type, data }, null, 2));
     },
-    llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
-      invocationParam: { stream: true },
-    }),
-    // Inline - Internal tools the agent can leverage
+    inferenceConfig: {
+      llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
+        invocationParam: { stream: true },
+      }),
+    },
     tools: {
       selfTalk: createAgentTool({
         name: 'tool.self.talk',
@@ -84,7 +85,12 @@ export const operatorAgent: EventHandlerFactory<{
         output: AgentDefaults.OUTPUT_BUILDER,
       },
       '2.0.0': {
-        llm: anthropicLLMIntegration(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }), {}),
+        inferenceConfig: {
+          llm: anthropicLLMIntegration(
+            new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+            {},
+          ),
+        },
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
           You are any AI agent which can coordinate with other agents and tools

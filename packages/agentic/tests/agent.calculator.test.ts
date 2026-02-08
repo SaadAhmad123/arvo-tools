@@ -11,7 +11,7 @@ import {
   SimpleMachineMemory,
 } from 'arvo-event-handler';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { SimplePermissionManager } from '../src/index.js';
+import { type PreInferenceHook, SimplePermissionManager } from '../src/index.js';
 import { calculatorAgent, calculatorAgentContract } from './handlers/agent.calculator';
 import { calculatorHandler } from './handlers/calculator.handler';
 import { HUMAN_INTERACTION_DOMAIN, humanReviewContract } from './handlers/contract.human.review.js';
@@ -21,12 +21,30 @@ const memory = new SimpleMachineMemory();
 const permissionManager = new SimplePermissionManager({
   domains: [HUMAN_INTERACTION_DOMAIN],
 });
+
+const preInferenceHook: PreInferenceHook = ({messages}) => {
+  return [
+    ...messages,
+    {
+      role: 'user' as const,
+      seenCount: 0,
+      content: {
+        type: 'text',
+        content: 'Please perform the requested task'
+      }
+    }
+  ]
+};
+
 const tests: ArvoTestSuite = {
   config: {
     fn: async (event: ArvoEvent) => {
       let domainedEvent: ArvoEvent | null = null;
       const result = await createSimpleEventBroker(
-        [calculatorAgent({ memory, permissionManager }), calculatorHandler()],
+        [
+          calculatorAgent({ memory, permissionManager, hooks: { preInference: preInferenceHook } }),
+          calculatorHandler(),
+        ],
         {
           onDomainedEvents: async ({ event }) => {
             domainedEvent = event;
