@@ -41,16 +41,16 @@
     "access": "public"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.71.2",
-    "@arizeai/openinference-semantic-conventions": "2.1.2",
-    "@modelcontextprotocol/sdk": "1.24.3",
+    "@anthropic-ai/sdk": "0.74.0",
+    "@arizeai/openinference-semantic-conventions": "2.1.7",
+    "@modelcontextprotocol/sdk": "1.26.0",
     "@opentelemetry/api": "1.9.0",
     "arvo-core": "3.0.28",
     "arvo-event-handler": "3.0.28",
-    "openai": "6.10.0",
+    "openai": "6.18.0",
     "uuid": "11.1.0",
     "zod": "3.25.76",
-    "zod-to-json-schema": "3.25.0"
+    "zod-to-json-schema": "3.25.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

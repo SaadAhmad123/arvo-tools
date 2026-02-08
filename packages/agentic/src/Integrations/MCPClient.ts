@@ -24,9 +24,9 @@ export type MCPClientParam = {
 };
 
 /**
- * A Production-grade Client for the Model Context Protocol (MCP).
+ * A Client for the Model Context Protocol (MCP).
  *
- * This class bridges Arvo Agents with the external MCP ecosystem, allowing agents to
+ * This connector bridges Arvo Agents with the external MCP ecosystem, allowing agents to
  * interact with filesystem, databases, GitHub, Slack, and other standardized MCP servers.
  *
  * @remarks

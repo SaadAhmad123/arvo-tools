@@ -4,6 +4,7 @@ import {
   cleanString,
   exceptionToSpan,
   getOtelHeaderFromSpan,
+  type VersionedArvoContract,
 } from 'arvo-core';
 import {
   type ArvoResumableHandler,
@@ -16,37 +17,24 @@ import { v4 } from 'uuid';
 import type { AgentInternalTool } from '../AgentTool/types.js';
 import type { PermissionManagerContext } from '../interfaces.permission.manager.js';
 import type { NonEmptyArray, OtelInfoType } from '../types.js';
+import { AgentDefaults } from './AgentDefaults.js';
 import { agentLoop } from './agentLoop.js';
+import { AgentStateSchema } from './schema.js';
 import type { AgentEventStreamer } from './stream/types.js';
 import { createTimestamp } from './stream/utils.js';
 import type {
   AgentMessage,
   AgentServiceContract,
+  AgentState,
   AnyArvoOrchestratorContract,
   CreateArvoAgentParam,
 } from './types.js';
 import {
+  applyToolEnablement,
   generateAgentInternalToolDefinitions,
   generateMcpToolDefinitions,
   generateServiceToolDefinitions,
 } from './utils.js';
-
-export type AgentState = {
-  initEventAccessControl: string | null;
-  currentSubject: string;
-  system: string | null;
-  messages: AgentMessage[];
-  toolInteractions: {
-    max: number;
-    current: number;
-  };
-  awaitingToolCalls: Record<string, { type: string; data: Record<string, unknown> | null }>;
-  totalExecutionUnits: number;
-  totalTokenUsage: {
-    prompt: number;
-    completion: number;
-  };
-};
 
 /**
  * Creates a fully-featured AI Agent implemented as an Arvo Resumable Event Handler.
@@ -56,19 +44,36 @@ export type AgentState = {
  * consuming zero resources between event processing cycles while maintaining conversation
  * state in persistent memory.
  *
- * @remarks
- * The agent operates on a start-stop-resume execution model where it receives an event, invokes 
- * the LLM with available tools (internal Typescript functions, MCP external sources, or Arvo services), 
- * and either continues immediately for synchronous tools or suspends execution for service calls 
- * until responses arrive. When the LLM requests multiple tools simultaneously, priority-based orchestration 
- * ensures only the highest-priority batch executes (enabling "human-approval-first" patterns), while contract 
- * versioning enforces that you provide complete handler implementations for all defined versions 
- * (enabling safe evolution of prompts, models, and output schemas across v1, v2, etc.). The optional permission 
- * manager adds deterministic authorization outside the LLM's control—blocked tools trigger permission request events, 
- * the agent suspends until external approval, then retries with updated permissions, creating a security layer 
- * immune to prompt injection.
- 
-* @param param - Configuration object defining the agent's contracts, tools, memory backend,
+ * @remark
+ * **Execution Model:**
+ * The agent follows a start-stop-resume pattern. On initialization, it builds context from
+ * the input event, then enters a ReAct (Reason+Act) cognitive loop. When calling Arvo services,
+ * it persists state to memory and suspends, enabling any worker to resume it later. This
+ * eliminates long-running processes and enables horizontal scaling.
+ *
+ * **Tool Ecosystem:**
+ * - **Internal Tools:** Synchronous functions for fast, CPU-bound operations.
+ * - **MCP Tools:** External tools via Model Context Protocol (filesystem, databases, APIs).
+ * - **Arvo Services:** Asynchronous event-driven services that trigger suspension.
+ *
+ * Both Internal and MCP tools execute synchronously within the loop, while Arvo service calls
+ * cause the agent to emit events and suspend until responses arrive.
+ *
+ * **Priority Batch Execution:**
+ * When the LLM requests multiple tools, they are sorted by priority. Only the highest-priority
+ * batch executes; lower-priority calls are dropped. This enforces safety guardrails (e.g.,
+ * requiring human approval before destructive actions).
+ *
+ * **Permission Management:**
+ * Tools can be placed under permission policy via `explicitPermissionRequired`. The permission
+ * manager evaluates each tool call as APPROVED (execute), DENIED (block permanently), or
+ * REQUESTABLE (block and emit permission request). Permission state persists across suspensions.
+ *
+ * **Self-Correction:**
+ * If the LLM's outputs fails contract schema validation, the error is fed back and the
+ * agent retries, enabling automatic repair of malformed responses or tools calls.
+ *
+ * @param param - Configuration object defining the agent's contracts, tools, memory backend,
  *                 LLM integration, and version-specific behavior handlers.
  *
  * @returns An ArvoResumable instance that participates in the event fabric as a standard
@@ -96,16 +101,17 @@ export type AgentState = {
  *       name: 'check_time',
  *       description: 'Returns current server time in ISO format',
  *       input: z.object({}),
- *       output: z.object({ time: z.string() }),
- *       fn: async () => ({ time: new Date().toISOString() })
+ *       fn: async () => ({ data: { time: new Date().toISOString() } })
  *     })
  *   },
- *   llm: openaiLLMIntegration(new OpenAI(), { model: 'gpt-4o' }),
+ *   inferenceConfig: {
+ *      llm: openaiLLMIntegration(new OpenAI(), { model: 'gpt-4o' }),
+ *   },
  *   memory: memory,
- *   permissionManager: new ToolPermissionManager(),
+ *   permissionManager: new SimplePermissionManager(),
  *   handler: {
  *     '1.0.0': {
- *       permissionPolicy: async ({ services }) => [
+ *       explicitPermissionRequired: async ({ services }) => [
  *         services.billing.name  // Require permission for billing calls
  *       ],
  *       context: AgentDefaults.CONTEXT_BUILDER(async ({ tools }) =>
@@ -126,18 +132,24 @@ export const createArvoAgent = <
   contracts,
   memory,
   handler,
-  llm,
+  inferenceConfig,
   mcp,
-  maxToolInteractions = 5,
-  llmResponseType = 'text',
+  maxAgentCycles = 5,
   tools,
   onStream,
   permissionManager,
   defaultEventEmissionDomains,
 }: CreateArvoAgentParam<TSelfContract, TServiceContract, TTools>) => {
-  const serviceContracts = Object.fromEntries(
-    Object.entries(contracts.services).map(([key, { contract }]) => [key, contract]),
-  ) as { [K in keyof TServiceContract & string]: TServiceContract[K]['contract'] };
+  // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+  const serviceContracts: Record<string, VersionedArvoContract<any, any>> = {};
+  const serviceTransformers: Record<string, NonNullable<AgentServiceContract['transformer']>> = {};
+
+  for (const [key, { contract, transformer }] of Object.entries(contracts.services)) {
+    serviceContracts[key] = contract;
+    if (transformer) {
+      serviceTransformers[contract.accepts.type] = transformer;
+    }
+  }
 
   const serviceTypeToDomainMap = Object.fromEntries(
     Object.values(contracts.services)
@@ -147,8 +159,8 @@ export const createArvoAgent = <
 
   if ((Object.keys(serviceContracts).length > 0 || permissionManager) && !memory) {
     // If permissions manager or service contracts are defined and
-    // memory is not defined then that is not allowed at by adding
-    // these it will automatically imply that sometime in its lifecycle,
+    // memory is not defined then that is not allowed as by adding
+    // the permission manager it will automatically imply that sometime in its lifecycle,
     // the Agent will need event-driven coordinations and will create a
     // suspension boundary
     throw new ConfigViolation(
@@ -187,7 +199,9 @@ export const createArvoAgent = <
     handler: Object.fromEntries(
       Object.keys(contracts.self.versions).map((ver) => [
         ver,
-        (async ({ span, input, context, service }) => {
+        (async ({ span, input, context: _context, service }) => {
+          const context = _context ? AgentStateSchema.parse(_context) : null;
+
           const otelInfo: OtelInfoType = {
             span,
             headers: getOtelHeaderFromSpan(span),
@@ -218,11 +232,16 @@ export const createArvoAgent = <
           };
 
           try {
-            const contextBuilder = handler[ver as ArvoSemanticVersion]?.context;
-            const outputBuilder = handler[ver as ArvoSemanticVersion]?.output;
-            const thisVersionLlmIntegration = handler[ver as ArvoSemanticVersion]?.llm ?? llm;
+            const contextBuilder =
+              handler[ver as ArvoSemanticVersion]?.context ?? AgentDefaults.CONTEXT_BUILDER();
+            const outputBuilder =
+              handler[ver as ArvoSemanticVersion]?.output ?? AgentDefaults.OUTPUT_BUILDER;
+            const thisVersionLlmIntegration =
+              handler[ver as ArvoSemanticVersion]?.inferenceConfig?.llm ?? inferenceConfig?.llm;
             const versionLlmResponseType =
-              handler[ver as ArvoSemanticVersion]?.llmResponseType ?? llmResponseType;
+              handler[ver as ArvoSemanticVersion]?.inferenceConfig?.responseType ??
+              inferenceConfig.responseType ??
+              'text';
             const selfVersionedContract = contracts.self.version(ver as ArvoSemanticVersion);
             const outputFormat =
               selfVersionedContract.emits[selfVersionedContract.metadata.completeEventType];
@@ -231,6 +250,14 @@ export const createArvoAgent = <
               accesscontrol: context?.initEventAccessControl ?? input?.accesscontrol ?? null,
               name: contracts.self.type,
             };
+            const preInferenceHook =
+              handler[ver as ArvoSemanticVersion]?.inferenceConfig?.hooks?.preInference ??
+              inferenceConfig?.hooks?.preInference ??
+              null;
+            const postInferenceHook =
+              handler[ver as ArvoSemanticVersion]?.inferenceConfig?.hooks?.postInference ??
+              inferenceConfig?.hooks?.postInference ??
+              null;
 
             await mcp?.connect({ otelInfo });
 
@@ -245,8 +272,8 @@ export const createArvoAgent = <
                 tools: internalTools,
               })) ?? [];
 
-            const toolInteraction = context?.toolInteractions ?? {
-              max: maxToolInteractions,
+            const agentCycles = context?.agentCycles ?? {
+              max: maxAgentCycles,
               current: 0,
             };
 
@@ -276,13 +303,18 @@ export const createArvoAgent = <
                         },
                       ]
                   ).map((item) => ({ ...item, seenCount: item.seenCount ?? 0 })) as AgentMessage[],
-                  tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                  tools: applyToolEnablement(
+                    Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                    llmContext?.enabledTools ?? {},
+                  ),
+                  preInferenceHook,
+                  postInferenceHook,
                   outputFormat,
                   outputBuilder: outputBuilder,
                   llmResponseType: versionLlmResponseType,
                   llm: thisVersionLlmIntegration,
                   mcp: mcp ?? null,
-                  toolInteraction,
+                  agentCycles,
                   currentTotalExecutionUnits: 0,
                   onStream: agentEventStreamer,
                   currentTotalUsageTokens: {
@@ -298,13 +330,14 @@ export const createArvoAgent = <
               const resumableContextToPersist: AgentState = {
                 initEventAccessControl: input.accesscontrol ?? null,
                 currentSubject: input.subject,
+                enabledTools: llmContext?.enabledTools ?? {},
                 system: llmContext?.system ?? null,
                 messages: response.messages,
-                toolInteractions: response.toolInteractions,
+                agentCycles: response.agentCycles,
                 awaitingToolCalls: Object.fromEntries(
                   (response.toolCalls ?? []).map((item) => [
                     item.toolUseId,
-                    { type: item.name, data: null },
+                    { type: item.name, responseEventType: null, data: null },
                   ]),
                 ),
                 totalExecutionUnits: response.executionUnits,
@@ -336,7 +369,7 @@ export const createArvoAgent = <
               });
 
               return {
-                context: resumableContextToPersist,
+                context: AgentStateSchema.parse(resumableContextToPersist),
                 output: {
                   __executionunits: response.executionUnits,
                   ...response.output,
@@ -353,6 +386,8 @@ export const createArvoAgent = <
             if (service?.parentid && resumedContext.awaitingToolCalls[service.parentid]) {
               // biome-ignore lint/style/noNonNullAssertion: It cannot be null. The if clause does already
               resumedContext.awaitingToolCalls[service.parentid]!.data = service.data;
+              // biome-ignore lint/style/noNonNullAssertion: It cannot be null. The if clause does already
+              resumedContext.awaitingToolCalls[service.parentid]!.responseEventType = service.type;
 
               if (service.type === permissionManager?.contract?.emitList?.[0]?.type) {
                 await permissionManager?.set({
@@ -376,12 +411,12 @@ export const createArvoAgent = <
             if (
               Object.values(resumedContext.awaitingToolCalls).some((item) => item.data === null)
             ) {
-              return { context: resumedContext };
+              return { context: AgentStateSchema.parse(resumedContext) };
             }
 
-            const messages = [...resumedContext.messages];
+            let messages = [...resumedContext.messages];
 
-            for (const [toolUseId, { type, data }] of Object.entries(
+            for (const [toolUseId, { type, responseEventType, data }] of Object.entries(
               resumedContext.awaitingToolCalls,
             )) {
               if (type === permissionManager?.contract?.accepts?.type) {
@@ -395,15 +430,28 @@ export const createArvoAgent = <
                 });
                 continue;
               }
-              messages.push({
-                role: 'user',
-                content: {
-                  type: 'tool_result',
+              if (serviceTransformers[type] && responseEventType && data) {
+                const transformedResult = await serviceTransformers[type]({
+                  type: responseEventType,
+                  data,
                   toolUseId,
-                  content: JSON.stringify(data ?? {}),
-                },
-                seenCount: 0,
-              });
+                });
+                if (Array.isArray(transformedResult)) {
+                  messages = [...messages, ...transformedResult];
+                } else {
+                  messages.push(transformedResult);
+                }
+              } else {
+                messages.push({
+                  role: 'user',
+                  content: {
+                    type: 'tool_result',
+                    toolUseId,
+                    content: JSON.stringify(data ?? {}),
+                  },
+                  seenCount: 0,
+                });
+              }
             }
 
             const response = await agentLoop(
@@ -412,13 +460,18 @@ export const createArvoAgent = <
                 initLifecycle: 'tool_result',
                 system: resumedContext.system ?? null,
                 messages: messages,
-                tools: Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                tools: applyToolEnablement(
+                  Object.values({ ...mcpTools, ...serviceTools, ...internalTools }),
+                  resumedContext.enabledTools,
+                ),
                 outputFormat,
+                preInferenceHook,
+                postInferenceHook,
                 outputBuilder: outputBuilder,
                 llmResponseType: versionLlmResponseType,
                 llm: thisVersionLlmIntegration,
                 mcp: mcp ?? null,
-                toolInteraction,
+                agentCycles,
                 currentTotalExecutionUnits: resumedContext.totalExecutionUnits,
                 onStream: agentEventStreamer,
                 currentTotalUsageTokens: resumedContext.totalTokenUsage,
@@ -431,11 +484,11 @@ export const createArvoAgent = <
             const resumableContextToPersist: AgentState = {
               ...resumedContext,
               messages: response.messages,
-              toolInteractions: response.toolInteractions,
+              agentCycles: response.agentCycles,
               awaitingToolCalls: Object.fromEntries(
                 (response.toolCalls ?? []).map((item) => [
                   item.toolUseId,
-                  { type: item.name, data: null },
+                  { type: item.name, data: null, responseEventType: null },
                 ]),
               ),
               totalExecutionUnits: response.executionUnits,
@@ -467,7 +520,7 @@ export const createArvoAgent = <
             });
 
             return {
-              context: resumableContextToPersist,
+              context: AgentStateSchema.parse(resumableContextToPersist),
               output: {
                 __executionunits: response.executionUnits,
                 ...response.output,

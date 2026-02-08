@@ -55,10 +55,11 @@ export const operatorAgent: EventHandlerFactory<{
         return;
       console.log(JSON.stringify({ type, data }, null, 2));
     },
-    llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
-      invocationParam: { stream: true },
-    }),
-    // Inline - Internal tools the agent can leverage
+    inferenceConfig: {
+      llm: openaiLLMIntegration(new OpenAI({ apiKey: process.env.OPENAI_API_KEY }), {
+        invocationParam: { stream: true },
+      }),
+    },
     tools: {
       selfTalk: createAgentTool({
         name: 'tool.self.talk',
@@ -67,8 +68,17 @@ export const operatorAgent: EventHandlerFactory<{
         input: z.object({
           note_to_self: z.string().describe('The string to record as a note to self'),
         }),
-        output: z.object({ recorded: z.boolean() }),
-        fn: () => ({ recorded: true }),
+        fn: (_, { toolUseId }) => ({
+          messages: {
+            role: 'user',
+            seenCount: 0,
+            content: {
+              type: 'tool_result',
+              toolUseId,
+              content: 'Recorded',
+            },
+          },
+        }),
       }),
     },
     handler: {
@@ -84,7 +94,12 @@ export const operatorAgent: EventHandlerFactory<{
         output: AgentDefaults.OUTPUT_BUILDER,
       },
       '2.0.0': {
-        llm: anthropicLLMIntegration(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }), {}),
+        inferenceConfig: {
+          llm: anthropicLLMIntegration(
+            new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }),
+            {},
+          ),
+        },
         context: AgentDefaults.CONTEXT_BUILDER(({ tools }) =>
           cleanString(`
           You are any AI agent which can coordinate with other agents and tools

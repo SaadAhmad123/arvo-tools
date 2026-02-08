@@ -55,3 +55,29 @@ export const AgentMessageSchema = z.object({
   content: AgentMessageContentSchema,
   seenCount: z.number().describe('Then number of time the LLM integration has seen this message'),
 });
+
+/** The agent resumable state schema */
+export const AgentStateSchema = z.object({
+  initEventAccessControl: z.string().nullable(),
+  currentSubject: z.string(),
+  system: z.string().nullable(),
+  messages: AgentMessageSchema.array(),
+  agentCycles: z.object({
+    max: z.number(),
+    current: z.number(),
+  }),
+  enabledTools: z.record(z.string(), z.boolean()),
+  awaitingToolCalls: z.record(
+    z.string(),
+    z.object({
+      type: z.string(),
+      responseEventType: z.string().nullable(),
+      data: z.record(z.string(), z.any()).nullable(),
+    }),
+  ),
+  totalExecutionUnits: z.number(),
+  totalTokenUsage: z.object({
+    prompt: z.number(),
+    completion: z.number(),
+  }),
+});

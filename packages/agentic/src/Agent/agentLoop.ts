@@ -6,6 +6,7 @@ import {
   ArvoOpenTelemetry,
   type ArvoSemanticVersion,
   cleanString,
+  exceptionToSpan,
   getOtelHeaderFromSpan,
   logToSpan,
   type VersionedArvoContract,
@@ -13,7 +14,8 @@ import {
 import { v4 } from 'uuid';
 import type z from 'zod';
 import type { AgentInternalTool } from '../AgentTool/types.js';
-import type { AgentLLMIntegration, AgentLLMIntegrationParam } from '../Integrations/types.js';
+import type { AgentLLMIntegrationParam } from '../Integrations/types.js';
+import { AgentLLMIntegrationOutputSchema } from '../Integrations/types.js';
 import type { IMCPClient } from '../interfaces.mcp.js';
 import type {
   IPermissionManager,
@@ -21,6 +23,7 @@ import type {
   ToolAuthorizationState,
 } from '../interfaces.permission.manager.js';
 import type { OtelInfoType } from '../types.js';
+import { AgentMessageSchema } from './schema.js';
 import type { AgentEventStreamer } from './stream/types.js';
 import type {
   AgentMessage,
@@ -59,10 +62,18 @@ export const agentLoop = async (
     tools: AgentToolDefinition[];
     outputFormat: z.ZodTypeAny;
     outputBuilder: AgentOutputBuilder;
-    llmResponseType: NonNullable<CreateArvoAgentParam['llmResponseType']>;
-    llm: AgentLLMIntegration;
+    llmResponseType: NonNullable<
+      NonNullable<CreateArvoAgentParam['inferenceConfig']>['responseType']
+    >;
+    llm: NonNullable<NonNullable<CreateArvoAgentParam['inferenceConfig']>['llm']>;
+    preInferenceHook: NonNullable<
+      NonNullable<NonNullable<CreateArvoAgentParam['inferenceConfig']>['hooks']>['preInference']
+    > | null;
+    postInferenceHook: NonNullable<
+      NonNullable<NonNullable<CreateArvoAgentParam['inferenceConfig']>['hooks']>['postInference']
+    > | null;
     mcp: IMCPClient | null;
-    toolInteraction: {
+    agentCycles: {
       current: number;
       max: number;
     };
@@ -102,10 +113,36 @@ export const agentLoop = async (
       let executionUnits = param.currentTotalExecutionUnits;
       const tokenUsage = param.currentTotalUsageTokens;
       try {
-        let currentToolInteractionCount = param.toolInteraction.current;
-        const messages = [...param.messages];
-        while (currentToolInteractionCount <= param.toolInteraction.max) {
-          const toolQuotaExhausted = !(currentToolInteractionCount < param.toolInteraction.max);
+        let currentAgentCycleCount = param.agentCycles.current;
+        let messages = [...param.messages];
+        while (currentAgentCycleCount <= param.agentCycles.max) {
+          const agentCycleQuotaExhausted = !(currentAgentCycleCount < param.agentCycles.max);
+
+          try {
+            messages = AgentMessageSchema.array().parse(
+              (await param.preInferenceHook?.({
+                messages,
+                system: param.system,
+                tools: param.tools,
+                span,
+                agentCycles: {
+                  current: currentAgentCycleCount,
+                  max: param.agentCycles.max,
+                  exhausted: agentCycleQuotaExhausted,
+                },
+                tokenUsage,
+              })) ?? messages,
+            );
+          } catch (err) {
+            logToSpan(
+              {
+                level: 'INFO',
+                message: 'Error thrown by the preInferenceHook',
+              },
+              span,
+            );
+            exceptionToSpan(err as Error, span);
+          }
 
           param.onStream({
             type:
@@ -120,36 +157,84 @@ export const agentLoop = async (
               tools: param.tools.map((item) => item.name),
               llmResponseType: param.llmResponseType,
               toolIteractionCycle: {
-                max: param.toolInteraction.max,
-                current: param.toolInteraction.current,
-                exhausted: toolQuotaExhausted,
+                max: param.agentCycles.max,
+                current: param.agentCycles.current,
+                exhausted: agentCycleQuotaExhausted,
               },
             },
           });
 
-          const response = await param.llm(
-            {
-              lifecycle,
-              system: param.system,
-              messages: messages,
-              tools: param.tools,
-              toolInteractions: {
-                current: currentToolInteractionCount,
-                max: param.toolInteraction.max,
-                exhausted: toolQuotaExhausted,
+          const response = AgentLLMIntegrationOutputSchema.parse(
+            await param.llm(
+              {
+                lifecycle,
+                system: param.system,
+                messages: messages,
+                tools: param.tools,
+                agentCycles: {
+                  current: currentAgentCycleCount,
+                  max: param.agentCycles.max,
+                  exhausted: agentCycleQuotaExhausted,
+                },
+                outputFormat: {
+                  type: param.llmResponseType,
+                  format: param.outputFormat,
+                },
+                onStream: param.onStream,
               },
-              outputFormat: {
-                type: param.llmResponseType,
-                format: param.outputFormat,
-              },
-              onStream: param.onStream,
-            },
-            { otelInfo },
+              { otelInfo },
+            ),
           );
-          currentToolInteractionCount++;
+          currentAgentCycleCount++;
           executionUnits += response.executionUnits;
           tokenUsage.completion += response.usage.tokens.completion;
           tokenUsage.prompt += response.usage.tokens.prompt;
+
+          if (param.postInferenceHook) {
+            let pihResult: Awaited<ReturnType<typeof param.postInferenceHook>> | undefined;
+            try {
+              pihResult =
+                (await param.postInferenceHook({
+                  inference: response,
+                  span,
+                  agentCycles: {
+                    current: currentAgentCycleCount,
+                    max: param.agentCycles.max,
+                    exhausted: agentCycleQuotaExhausted,
+                  },
+                  tokenUsage,
+                })) ?? undefined;
+            } catch (err) {
+              logToSpan(
+                {
+                  level: 'INFO',
+                  message: 'Error thrown by the postInferenceHook',
+                },
+                span,
+              );
+              exceptionToSpan(err as Error, span);
+            }
+            if (pihResult?.action === 'RETRY') {
+              logToSpan(
+                {
+                  level: 'INFO',
+                  message: `RETRY actions issued by the postInferenceHook. Dropping all inference and re-doing inference`,
+                },
+                span,
+              );
+              continue;
+            }
+            if (pihResult?.action === 'CIRCUIT_BREAK') {
+              logToSpan(
+                {
+                  level: 'INFO',
+                  message: `CIRCUIT_BREAK actions issued by the postInferenceHook. Dropping all inference and throwing the error issues by the hook`,
+                },
+                span,
+              );
+              throw pihResult.error;
+            }
+          }
 
           // Update the message seen count by one for all the
           // messages which the LLM has seen
@@ -160,7 +245,7 @@ export const agentLoop = async (
           if (response.type === 'tool_call') {
             const arvoToolCalls: AgentToolCallContent[] = [];
             const mcpToolResultPromises: Promise<AgentToolResultContent>[] = [];
-            const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
+            const internalToolResultPromises: Promise<AgentMessage | AgentMessage[]>[] = [];
             const prioritizedToolCalls = prioritizeToolCalls(response.toolRequests, nameToToolMap);
 
             const toolPermissionRequest: Parameters<IPermissionManager['get']>[0]['tools'] = {};
@@ -371,6 +456,7 @@ export const agentLoop = async (
                     const serverConfig = (
                       resolvedToolDef as unknown as AgentToolDefinition<AgentInternalTool>
                     ).serverConfig;
+
                     if (
                       !(
                         'fn' in serverConfig.contract &&
@@ -379,27 +465,63 @@ export const agentLoop = async (
                       )
                     ) {
                       return {
-                        type: 'tool_result',
-                        toolUseId: item.toolUseId,
-                        content: 'Invalid internal tool call',
+                        role: 'user' as const,
+                        seenCount: 0,
+                        content: {
+                          type: 'tool_result',
+                          toolUseId: item.toolUseId,
+                          content: 'Invalid internal tool call',
+                        },
                       };
                     }
 
-                    const response = await serverConfig.contract
-                      .fn(item.input, { otelInfo })
-                      ?.catch((err: Error) => ({
-                        type: 'error',
-                        name: err.name,
-                        message: err.message,
-                      }));
+                    try {
+                      const response =
+                        (await serverConfig.contract.fn(item.input, {
+                          otelInfo,
+                          toolUseId: item.toolUseId,
+                        })) ?? null;
 
-                    return {
-                      type: 'tool_result',
-                      toolUseId: item.toolUseId,
-                      content: response
-                        ? JSON.stringify(response)
-                        : 'No response available from the internal tool',
-                    };
+                      if (response && 'messages' in response) {
+                        return response.messages;
+                      }
+
+                      if (response && 'data' in response) {
+                        return {
+                          role: 'user' as const,
+                          seenCount: 0,
+                          content: {
+                            type: 'tool_result',
+                            toolUseId: item.toolUseId,
+                            content: JSON.stringify(response.data),
+                          },
+                        };
+                      }
+
+                      return {
+                        role: 'user',
+                        seenCount: 0,
+                        content: {
+                          type: 'tool_result',
+                          toolUseId: item.toolUseId,
+                          content: 'Tool executed successfully.',
+                        },
+                      };
+                    } catch (err) {
+                      return {
+                        role: 'user' as const,
+                        seenCount: 0,
+                        content: {
+                          type: 'tool_result',
+                          toolUseId: item.toolUseId,
+                          content: JSON.stringify({
+                            type: 'error',
+                            name: (err as Error).name,
+                            message: (err as Error).message,
+                          }),
+                        },
+                      };
+                    }
                   })(),
                 );
               } else if (resolvedToolDef.serverConfig.kind === 'arvo') {
@@ -438,7 +560,13 @@ export const agentLoop = async (
               messages.push({ role: 'user', content: item, seenCount: 0 });
             }
             for (const item of await Promise.all(internalToolResultPromises)) {
-              messages.push({ role: 'user', content: item, seenCount: 0 });
+              if (Array.isArray(item)) {
+                item.forEach((i) => {
+                  messages.push(i);
+                });
+              } else {
+                messages.push(item);
+              }
             }
             if (param.permissionManager && Object.keys(toolsPendingPermission).length) {
               const toolPermissionRequest = await param.permissionManager?.requestBuilder({
@@ -501,9 +629,9 @@ export const agentLoop = async (
               return {
                 messages,
                 toolCalls: arvoToolCalls,
-                toolInteractions: {
-                  current: currentToolInteractionCount,
-                  max: param.toolInteraction.max,
+                agentCycles: {
+                  current: currentAgentCycleCount,
+                  max: param.agentCycles.max,
                 },
                 executionUnits,
                 tokenUsage,
@@ -577,16 +705,16 @@ export const agentLoop = async (
             return {
               messages,
               output: outputResult.data,
-              toolInteractions: {
-                current: currentToolInteractionCount,
-                max: param.toolInteraction.max,
+              agentCycles: {
+                current: currentAgentCycleCount,
+                max: param.agentCycles.max,
               },
               executionUnits,
               tokenUsage,
             };
           }
         }
-        throw new Error(`Tool calls exhausted the max quota: ${currentToolInteractionCount}`);
+        throw new Error(`Tool calls exhausted the max quota: ${currentAgentCycleCount}`);
       } finally {
         span.end();
       }

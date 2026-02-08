@@ -43,15 +43,7 @@ import { formatMessagesForAnthropic } from './utils';
 export const anthropicLLMIntegration =
   (client: Anthropic, config?: AnthropicLlmIntegrationConfig): AgentLLMIntegration =>
   async (
-    {
-      messages: _messages,
-      system: _system,
-      tools,
-      outputFormat,
-      lifecycle,
-      toolInteractions,
-      onStream,
-    },
+    { messages: _messages, system: _system, tools, outputFormat, lifecycle, agentCycles, onStream },
     { otelInfo },
   ) =>
     await ArvoOpenTelemetry.getInstance().startActiveSpan({
@@ -80,9 +72,8 @@ export const anthropicLLMIntegration =
           system: _system,
         });
 
-        if (toolInteractions.exhausted) {
-          const limitMessage =
-            config?.toolLimitPrompt?.(toolInteractions) ?? DEFAULT_TOOL_LIMIT_PROMPT;
+        if (agentCycles.exhausted) {
+          const limitMessage = config?.toolLimitPrompt?.(agentCycles) ?? DEFAULT_TOOL_LIMIT_PROMPT;
           messages.push({
             role: 'user',
             content: {

@@ -331,3 +331,15 @@ export const prioritizeToolCalls = (
   const highestPriority = priorities[0] ?? 0;
   return grouped.get(highestPriority) ?? [];
 };
+
+/**
+ * Apply the enablement on the available tools. By default
+ * all the tools are enabled. Tools are removed only when they
+ * are explicitly marked as false
+ */
+export const applyToolEnablement = (
+  tools: AgentToolDefinition[],
+  toolEnablementMap: Record<string, boolean>,
+): AgentToolDefinition[] => {
+  return tools.filter((tool) => toolEnablementMap[tool.name] ?? true);
+};

@@ -39,6 +39,26 @@ export const dataUrlString = (allowedMimeTypes: string[]) =>
     },
   );
 
+const initSchema = z.object({
+  message: z.string().describe('The input message to the agent'),
+});
+
+const initMultiModalSchema = z.object({
+  message: z.string().describe('The input message to the agent'),
+  imageBase64: dataUrlString(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+    .array()
+    .optional()
+    .describe(
+      'An optional list of base64 image strings to read. An AI Agent must not send data via this field',
+    ),
+  pdfBase64: dataUrlString(['application/pdf'])
+    .array()
+    .optional()
+    .describe(
+      'An optional list of base64 pdfs to read. An AI Agent must not send data via this field',
+    ),
+});
+
 /**
  * Default schemas and builders for common agent patterns.
  *
@@ -52,9 +72,7 @@ export const AgentDefaults = {
    *
    * Use for basic conversational agents that only need text input.
    */
-  INIT_SCHEMA: z.object({
-    message: z.string().describe('The input message to the agent'),
-  }),
+  INIT_SCHEMA: initSchema,
   /**
    * Multimodal initialization schema supporting text, images, and PDFs.
    *
@@ -67,21 +85,7 @@ export const AgentDefaults = {
    * The media masking optimization automatically replaces viewed media with
    * placeholder text in subsequent LLM calls to reduce token consumption.
    */
-  INIT_MULTIMODAL_SCHEMA: z.object({
-    message: z.string().describe('The input message to the agent'),
-    imageBase64: dataUrlString(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
-      .array()
-      .optional()
-      .describe(
-        'An optional list of base64 image strings to read. An AI Agent must not send data via this field',
-      ),
-    pdfBase64: dataUrlString(['application/pdf'])
-      .array()
-      .optional()
-      .describe(
-        'An optional list of base64 pdfs to read. An AI Agent must not send data via this field',
-      ),
-  }),
+  INIT_MULTIMODAL_SCHEMA: initMultiModalSchema,
   /**
    * Default completion schema outputting a simple text response.
    *
@@ -120,53 +124,77 @@ export const AgentDefaults = {
     >(
       systemPromptBuilder?: (
         param: Parameters<AgentContextBuilder<T, V, TServiceContract, TTools>>[0],
-      ) => PromiseAble<string>,
+      ) => PromiseAble<string | { system: string; enabledTools?: Record<string, boolean> }>,
     ): AgentContextBuilder<T, V, TServiceContract, TTools> =>
     async (param) => {
-      const messages: AgentMessage[] = [
-        {
-          role: 'user',
-          content: { type: 'text', content: param.input.data.message },
-          seenCount: 0,
-        },
-      ];
+      let messages: AgentMessage[] = [];
 
-      for (const item of param.input.data.pdfBase64 ?? []) {
-        messages.push({
-          seenCount: 0,
-          role: 'user',
-          content: {
-            type: 'media',
-            content: item,
-            contentType: {
-              format: 'base64',
-              type: 'file',
-              name: `${v4()}.pdf`,
-              mediatype: 'application/pdf',
-            },
+      if (initMultiModalSchema.safeParse(param.input.data).success) {
+        messages = [
+          {
+            role: 'user',
+            content: { type: 'text', content: param.input.data.message },
+            seenCount: 0,
           },
-        });
+        ];
+
+        for (const item of param.input.data.pdfBase64 ?? []) {
+          messages.push({
+            seenCount: 0,
+            role: 'user',
+            content: {
+              type: 'media',
+              content: item,
+              contentType: {
+                format: 'base64',
+                type: 'file',
+                name: `${v4()}.pdf`,
+                mediatype: 'application/pdf',
+              },
+            },
+          });
+        }
+
+        for (const item of param.input.data.imageBase64 ?? []) {
+          messages.push({
+            seenCount: 0,
+            role: 'user',
+            content: {
+              type: 'media',
+              content: item,
+              contentType: {
+                format: 'base64',
+                type: 'image',
+                name: `${v4()}.png`,
+                mediatype: 'image/png',
+              },
+            },
+          });
+        }
+      } else if (initSchema.safeParse(param.input.data).success) {
+        messages = [
+          {
+            role: 'user',
+            content: { type: 'text', content: param.input.data.message },
+            seenCount: 0,
+          },
+        ];
+      } else {
+        messages = [
+          {
+            role: 'user',
+            content: { type: 'text', content: JSON.stringify(param.input.data) },
+            seenCount: 0,
+          },
+        ];
       }
 
-      for (const item of param.input.data.imageBase64 ?? []) {
-        messages.push({
-          seenCount: 0,
-          role: 'user',
-          content: {
-            type: 'media',
-            content: item,
-            contentType: {
-              format: 'base64',
-              type: 'image',
-              name: `${v4()}.png`,
-              mediatype: 'image/png',
-            },
-          },
-        });
-      }
+      const result = (await systemPromptBuilder?.(param)) ?? null;
 
+      if (result === null) return { messages };
+      if (typeof result === 'string') return { system: result, messages };
       return {
-        system: (await systemPromptBuilder?.(param)) ?? null,
+        ...result,
         messages,
       };
     },

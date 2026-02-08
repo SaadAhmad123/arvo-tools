@@ -9,6 +9,7 @@ import type {
 } from 'arvo-core';
 import type { createArvoResumable, IMachineMemory } from 'arvo-event-handler';
 import type z from 'zod';
+import { createAgentTool } from '../AgentTool';
 import type { AgentInternalTool } from '../AgentTool/types';
 import type {
   AgentLLMIntegration,
@@ -22,6 +23,7 @@ import type {
   AgentMediaContentSchema,
   AgentMessageContentSchema,
   AgentMessageSchema,
+  AgentStateSchema,
   AgentTextContentSchema,
   AgentToolCallContentSchema,
   AgentToolResultContentSchema,
@@ -50,11 +52,21 @@ export type AgentMessageContent = z.infer<typeof AgentMessageContentSchema>;
  */
 export type AgentMessage = z.infer<typeof AgentMessageSchema>;
 
+/**
+ * The resumable agent state type
+ */
+export type AgentState = z.infer<typeof AgentStateSchema>;
+
 // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
 export type AnyArvoOrchestratorContract = ArvoOrchestratorContract<any, any>;
 
 // biome-ignore lint/suspicious/noExplicitAny: Needs to be genral
 export type AnyArvoContract = ArvoContract<any, any, any>;
+
+// biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+export type AgentToolOutputTransformer<T = any> = (
+  data: T,
+) => PromiseAble<AgentMessage | AgentMessage[]>;
 
 /**
  * Defines a Distributed Tool (Arvo Service) available to the Agent.
@@ -66,10 +78,12 @@ export type AnyArvoContract = ArvoContract<any, any, any>;
  * 3. The remote Service processes the event and replies.
  * 4. The Agent Resumes.
  */
-export type AgentServiceContract = {
-  /** The Versioned Contract of the service the agent can call. */
+export type AgentServiceContract<
   // biome-ignore lint/suspicious/noExplicitAny: Needs to general
-  contract: VersionedArvoContract<any, any>;
+  TContract extends VersionedArvoContract<any, any> = VersionedArvoContract<any, any>,
+> = {
+  /** The Versioned Contract of the service the agent can call. */
+  contract: TContract;
   /**
    * Specific event domains to route the request to.
    * Useful for distinguishing between event deliver channels (e.g. `human.interaction`).
@@ -78,16 +92,13 @@ export type AgentServiceContract = {
   /**
    * The execution priority of the tool (Default: 0).
    *
-   * Arvo enforces **Priority-Based Batch execution**. If the LLM generates multiple tool calls
-   * in a single turn, Arvo will sort them by priority and **only execute the highest priority batch**.
+   * Enforces **Priority-Based Batch execution**. If the LLM generates multiple tool calls
+   * in a single turn, the actions manager will sort them by priority and **only execute the highest priority batch**.
    * All lower priority tool calls in that turn are **dropped**.
-   *
-   * @remarks
-   * This is critical for enforcing "Human-in-the-loop-first" or "Auth-first" workflows.
    *
    * @example
    * **Scenario:** LLM wants to call `calculate_refund` (Priority 0) and `human_approval` (Priority 100) simultaneously.
-   * 1. Arvo sees both calls.
+   * 1. Actions manager sees both calls.
    * 2. `human_approval` has higher priority.
    * 3. Arvo emits `human_approval` event and drops `calculate_refund`.
    * 4. Agent suspends.
@@ -95,6 +106,13 @@ export type AgentServiceContract = {
    * 6. LLM sees approval, and *now* re-issues the `calculate_refund` call.
    */
   priority?: number;
+
+  transformer?: AgentToolOutputTransformer<{
+    toolUseId: string;
+    type: string;
+    // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+    data: Record<string, any>;
+  }>;
 };
 
 /**
@@ -135,13 +153,6 @@ export type AgentToolServerConfig<T> = {
 
 /**
  * The unified definition of a Tool as presented to the LLM Context.
- *
- * This type abstracts away the difference between:
- * - **Arvo Services** (Async/Distributed)
- * - **Internal Tools** (Sync/Local)
- * - **MCP Tools** (External/Standardized)
- *
- * The Agent logic uses `serverConfig.kind` to determine execution strategy.
  */
 export type AgentToolDefinition<
   T extends
@@ -199,33 +210,8 @@ export type AgentLLMContext<
 /**
  * The "Context Engineering" Hook.
  *
- * This function executes **once** when a new Agent workflow is initialized.
- * Its primary responsibility is to the context engineering for the agent.
- *
- * @remarks
- * **Function Lifecycle:**
- * 1. **Ingest:** Arvo receives an event matching your Contract's `init` schema.
- * 2. **Transform:** This function transforms that typed data (e.g. `{ userId: "123", query: "help" }`)
- *    into the Agent's foundational state (System Prompt + Initial Message Thread).
- * 3. **Persist:** The result is stored in `memory`. Future steps in this workflow (e.g. returning from tools)
- *    will simply append to this history, they will not run this builder again.
- *
  * @param param - Context parameters.
- *
- * @returns The initial state object containing the `system` string and `messages` array.
- *
- * @example
- * ```ts
- * context: async ({ input, tools }) => ({
- *   // Dynamic System Prompt based on available tools
- *   system: `You are a helpful assistant. You have access to: ${Object.keys(tools.services).join(', ')}`,
- *
- *   // Map the Event Data into the first User Message
- *   messages: [
- *     { role: 'user', content: { type: 'text', content: input.data.userQuery } }
- *   ]
- * })
- * ```
+ * @returns The initial context object containing the context data for the agent.
  */
 export type AgentContextBuilder<
   T extends AnyArvoOrchestratorContract = AnyArvoOrchestratorContract,
@@ -245,8 +231,15 @@ export type AgentContextBuilder<
   tools: AgentLLMContext<TServiceContract, TTools>['tools'];
   /** The Otel span to add logs to */
   span: Span;
-  // biome-ignore lint/suspicious/noConfusingVoidType: This is better for UX
-}) => PromiseAble<Partial<Pick<AgentLLMContext<TServiceContract>, 'messages' | 'system'>> | void>;
+}) => PromiseAble<
+  | Partial<
+      Pick<AgentLLMContext<TServiceContract>, 'messages' | 'system'> & {
+        enabledTools: Record<string, boolean>;
+      }
+    >
+  // biome-ignore lint/suspicious/noConfusingVoidType: Better DX
+  | void
+>;
 
 /**
  * The "Output Validation" Hook.
@@ -275,6 +268,131 @@ export type AgentOutputBuilder<
     }
   | { error: Error }
 >;
+
+/**
+ * Hook executed before the inference request is sent to the LLM integration.
+ *
+ * @param param.system - The current system prompt being sent to the LLM.
+ * @param param.messages - The full message history being sent for inference.
+ * @param param.tools - The tool definitions available to the LLM for this inference.
+ * @param param.span - The current OTEL span
+ * @param param.agentCycles - The current agent cycle configuration
+ * @param param.tokenUsage - The current token usage of the agent
+ *
+ * @returns
+ * - `AgentMessage[]`: The transformed messages to use instead of the original.
+ * - `undefined`: Use the original messages without modification.
+ */
+export type PreInferenceHook = (param: {
+  system: string | null;
+  messages: AgentMessage[];
+  tools: AgentToolDefinition[];
+  span: Span;
+  agentCycles: {
+    current: number;
+    max: number;
+    exhausted: boolean;
+  };
+  tokenUsage: {
+    prompt: number;
+    completion: number;
+  };
+  // biome-ignore lint/suspicious/noConfusingVoidType: Better DX
+}) => PromiseAble<AgentMessage[] | void>;
+
+/**
+ * Hook executed immediately after the LLM integration returns its output.
+ *
+ * @param param.inference - The output returned from the LLM integration.
+ * @param param.span - The current OTEL span
+ * @param param.agentCycles - The current agent cycle configuration
+ * @param param.tokenUsage - The current token usage of the agent
+ *
+ * @returns
+ * - `{action: 'RETRY'}`: Discard the current response and re-invoke inference.
+ *   The retry increments the tool interaction counter by 1. Be mindful of the
+ *   `maxToolInteractions` limit to prevent infinite retry loops.
+ * - `{action: 'CIRCUIT_BREAK', error: Error}`: Act as a circuit breaker, causing
+ *   the agent to emit a system error for upstream systems. If the error is a
+ *   `ViolationError`, it is thrown as a violation error.
+ * - `undefined`: Continue with normal execution.
+ */
+export type PostInferenceHook = (
+  param: {
+    inference: AgentLLMIntegrationOutput;
+    span: Span;
+    agentCycles: {
+      current: number;
+      max: number;
+      exhausted: boolean;
+    };
+    tokenUsage: {
+      prompt: number;
+      completion: number;
+    };
+  },
+  // biome-ignore lint/suspicious/noConfusingVoidType: Better DX
+) => PromiseAble<{ action: 'RETRY' } | { action: 'CIRCUIT_BREAK'; error: Error } | void>;
+
+export type AgentInferenceConfiguration = {
+  /**
+   * The LLM integration function connecting the agent to its reasoning engine.
+   * Individual versions can override this to use different models per version.
+   */
+  llm: AgentLLMIntegration;
+
+  /**
+   * The agent output type configuration.
+   *
+   * - `'text'`: Standard conversational response.
+   * - `'json'`: Structured Output / JSON Mode (validated against the contract's output schema).
+   *
+   * Individual versions can override this via their handler configuration,
+   * enabling progressive migration from text to structured outputs.
+   * @defaultValue 'text'
+   */
+  responseType?: AgentLLMIntegrationParam['outputFormat']['type'];
+
+  /**
+   * Optional lifecycle hooks for intercepting and customizing the inference pipeline.
+   *
+   * These hooks allow fine-grained control over the LLM request/response cycle,
+   * enabling patterns like message transformation, retry logic, and circuit breaking.
+   */
+  hooks?: Partial<{
+    /**
+     * Hook executed before the inference request is sent to the LLM integration.
+     *
+     * Use this hook to intercept and transform the conversation context before it reaches
+     * the model. Common use cases include:
+     * - Filtering or redacting sensitive information from messages
+     * - Injecting dynamic context or instructions based on runtime conditions
+     * - Implementing message compression or summarization strategies
+     * - Adding custom prefixes/suffixes to the conversation
+     *
+     * See {@link PreInferenceHook} for more information.
+     *
+     * @note The returned messages become part of the agent state and persist for subsequent turns.
+     * All errors thrown are quietly swallowed. They will only be logged to span events.
+     */
+    preInference: PreInferenceHook;
+
+    /**
+     * Hook executed immediately after the LLM integration returns its output.
+     *
+     * Use this hook to inspect and react to the LLM response before it is processed.
+     * Common use cases include:
+     * - Implementing self-correction loops by retrying on invalid outputs
+     * - Circuit breaking on critical errors or policy violations
+     * - Validating response quality or safety before proceeding
+     *
+     * See {@link PostInferenceHook} for more information.
+     *
+     * @note All errors thrown are quietly swallowed. They will only be logged to span events.
+     */
+    postInference: PostInferenceHook;
+  }>;
+};
 
 /**
  * Configuration object for instantiating a new Arvo Agent.
@@ -331,12 +449,12 @@ export type CreateArvoAgentParam<
   memory?: IMachineMemory<Record<string, unknown>>;
 
   /**
-   * The maximum number of tool-execution loops allowed for a single user request.
+   * The maximum number of agentic-execution cycles allowed for a single workflow instance.
    * Prevents the Agent from getting stuck in infinite reasoning loops or burning excessive tokens.
    *
    * @defaultValue 5
    */
-  maxToolInteractions?: number;
+  maxAgentCycles?: number;
 
   /**
    * An optional Model Context Protocol (MCP) client.
@@ -346,34 +464,26 @@ export type CreateArvoAgentParam<
   mcp?: IMCPClient;
 
   /**
-   * Internal tools executed synchronously within the agent's process.
+   * Internal tools executed within the agent's process.
    *
    * Best suited for lightweight operations.
    * Internal tools should complete in milliseconds. For operations requiring
-   * network I/O, database access, or extended computation, use Arvo services
-   * to avoid blocking the agent's execution.
+   * extended computation use Arvo services to avoid blocking the agent's execution.
    *
-   * Each tool is created via `createAgentTool()` which adds automatic
+   * Each tool is created via {@link createAgentTool} which adds automatic
    * input validation and OpenTelemetry instrumentation.
    */
   tools?: TTools;
 
   /**
-   * The default mechanism to force the Agent to generate a specific output structure.
-   * - `'text'`: Standard conversational response.
-   * - `'json'`: Structured Output / JSON Mode (validated against the contract's output schema).
+   * The default inference configuration applied to all agent versions.
    *
-   * Individual versions can override this via their handler configuration,
-   * enabling progressive migration from text to structured outputs.
-   * @defaultValue 'text'
+   * Defines the LLM integration, response type, and lifecycle hooks used
+   * unless overridden by a specific version's `inferenceConfig`.
+   *
+   * See {@link AgentInferenceConfiguration} for available options.
    */
-  llmResponseType?: AgentLLMIntegrationParam['outputFormat']['type'];
-
-  /**
-   * Default LLM integration function connecting the agent to its reasoning engine.
-   * Individual versions can override this to use different models per version.
-   */
-  llm: AgentLLMIntegration;
+  inferenceConfig: AgentInferenceConfiguration;
 
   /**
    * Optional event stream listener for real-time agent activity monitoring.
@@ -440,35 +550,32 @@ export type CreateArvoAgentParam<
       ) => PromiseAble<string[]>;
 
       /**
-       * Version-specific override for the LLM response format.
-       * Overrides the agent-level `llmResponseType` default for this version only.
-       */
-      llmResponseType?: AgentLLMIntegrationParam['outputFormat']['type'];
-
-      /**
-       * Version-specific override for the LLM integration.
-       * Overrides the agent-level `llm` default for this version only.
-       * Enables model evolution across versions.
-       * Each version can use completely different models or providers without
-       * affecting other versions or requiring code changes in consumers.
-       */
-      llm?: AgentLLMIntegration;
-
-      /**
-       * Context engineering function executed once during agent initialization.
+       * Version-specific overrides for the inference configuration.
        *
-       * Transforms the initialization event into the agent's foundational state:
+       * Allows this version to use different settings than the agent-level defaults,
+       * such as a different LLM, response type, or lifecycle hooks.
+       *
+       * See {@link AgentInferenceConfiguration} for available options.
+       */
+      inferenceConfig?: Partial<AgentInferenceConfiguration>;
+
+      /**
+       * The "Context Engineering" Hook.
+       *
+       * Executes once during agent initialization to transform the input event
+       * into the agent's foundational context:
        * - System prompt defining the agent's role and capabilities
        * - Initial message history seeding the conversation
+       * - Optional tool enablement map (tools are enabled by default)
        *
        * The returned context persists in memory and forms the base that all
-       * subsequent tool results and LLM responses append to. This function
-       * runs only once per workflow—resumptions after service calls do not
-       * re-execute the context builder.
+       * subsequent tool results and LLM responses append to.
+       *
+       * See {@link AgentContextBuilder} for more information.
        *
        * @example
        * ```typescript
-       * context: async ({ input, tools, span }) => ({
+       * context: async ({ input, tools }) => ({
        *   system: `You are a customer support agent. Available tools:
        *            - ${tools.services.billing.name}: Access billing data
        *            - ${tools.services.ticketing.name}: Create support tickets`,
@@ -478,7 +585,10 @@ export type CreateArvoAgentParam<
        *       content: { type: 'text', content: input.data.customerQuery },
        *       seenCount: 0
        *     }
-       *   ]
+       *   ],
+       *   enabledTools: {
+       *     [tools.services.billing.name]: input.data.isBillingOnly
+       *   }
        * })
        * ```
        */

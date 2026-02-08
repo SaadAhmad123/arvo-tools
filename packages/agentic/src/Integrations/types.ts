@@ -1,4 +1,5 @@
-import type z from 'zod';
+import z from 'zod';
+import { AgentToolCallContentSchema } from '../Agent/schema';
 import type { AgentEventStreamer } from '../Agent/stream/types';
 import type {
   AgentLLMContext,
@@ -34,11 +35,11 @@ export type AgentLLMIntegrationParam = {
   tools: AgentToolDefinition[];
 
   /**
-   * Tool loop limits.
+   * Agent loop limits.
    * If `exhausted` is true, you should inject a system instruction forcing the LLM to stop calling tools
    * and synthesize a final answer.
    */
-  toolInteractions: AgentLLMContext['toolInteractions'] & {
+  agentCycles: AgentLLMContext['toolInteractions'] & {
     exhausted: boolean;
   };
 
@@ -68,41 +69,46 @@ export type AgentLLMIntegrationParam = {
  * You must parse your provider's raw response (e.g. OpenAI `Choice`, Anthropic `ContentBlock`)
  * and normalize it into one of these three mutually exclusive types so the Agent Loop can act on it.
  */
-export type AgentLLMIntegrationOutput = {
-  /** Token metrics for observability/billing. */
-  usage: {
-    tokens: {
-      prompt: number;
-      completion: number;
-    };
-  };
-  /**
-   * A standardized cost metric for Arvo's throttling/billing (e.g. 1 unit = 1 input token).
-   * You define the calculation logic in your integration.
-   */
-  executionUnits: number;
-} & (
-  | {
+export const AgentLLMIntegrationOutputSchema = z.intersection(
+  z.object({
+    /** Token metrics for observability/billing. */
+    usage: z.object({
+      tokens: z.object({
+        prompt: z.number(),
+        completion: z.number(),
+      }),
+    }),
+    /**
+     * A standardized cost metric for Arvo's throttling/billing (e.g. 1 unit = 1 input token).
+     * You define the calculation logic in your integration.
+     */
+    executionUnits: z.number(),
+  }),
+  z.discriminatedUnion('type', [
+    z.object({
       /** The LLM wants to execute tools. */
-      type: 'tool_call';
-      toolRequests: Omit<AgentToolCallContent, 'type'>[];
-    }
-  | {
+      type: z.literal('tool_call'),
+      toolRequests: AgentToolCallContentSchema.omit({ type: true }).array(),
+    }),
+    z.object({
       /** The LLM responded with conversational text. */
-      type: 'text';
-      content: string;
-    }
-  | {
+      type: z.literal('text'),
+      content: z.string(),
+    }),
+    z.object({
       /**
        * The LLM responded with Structured JSON (requested via `outputFormat`).
        * `parsedContent` must be the valid JS object result of parsing `content`.
        * You can use `tryParseJson` utility from `@arvo-tools/agentic`
        */
-      type: 'json';
-      content: string;
-      parsedContent: Record<string, unknown> | null;
-    }
+      type: z.literal('json'),
+      content: z.string(),
+      parsedContent: z.record(z.string(), z.unknown()).nullable(),
+    }),
+  ]),
 );
+
+export type AgentLLMIntegrationOutput = z.infer<typeof AgentLLMIntegrationOutputSchema>;
 
 /**
  * Interface for an LLM Provider Adapter function.
@@ -144,7 +150,7 @@ export type CommonIntegrationConfig = {
    * Use this to guide the model to either summarize its current progress, give up gracefully, or
    * attempt a final answer without further tool usage.
    */
-  toolLimitPrompt?: (toolInteractions: AgentLLMIntegrationParam['toolInteractions']) => string;
+  toolLimitPrompt?: (toolInteractions: AgentLLMIntegrationParam['agentCycles']) => string;
 
   /**
    * An optional interceptor to transform messages or system instructions immediately before the LLM call.
