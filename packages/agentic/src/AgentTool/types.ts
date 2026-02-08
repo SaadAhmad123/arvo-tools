@@ -53,9 +53,14 @@ export type AgentInternalTool<
    * The implementation logic.
    *
    * @param input - The validated arguments matching `TInputSchema`. You do not need to re-validate.
-   * @param config - Observability context (Span/Headers) to link any internal logging or network calls
-   *                 and the toolUseId
-   * @returns The result matching `TOutputSchema`.
+   * @param config - Observability context (Span/Headers) to link any internal logging or network calls,
+   *                 plus the `toolUseId` for correlation.
+   * @returns One of three forms:
+   *   - `{ messages }` — Provide full control over the tool result message(s) sent back to the LLM.
+   *     Can be a single user message or a tuple starting with a user message followed by additional agent messages.
+   *     Use this to supply multimedia data from as user message
+   *   - `{ data }` — A simple key-value object that Arvo automatically wraps into a tool result content block.
+   *   - `void` — Return nothing; Arvo treats this as a successful no-op (useful for side-effect-only tools).
    */
   fn: (
     input: z.infer<TInputSchema>,

@@ -43,20 +43,37 @@ import {
  * in your Arvo system. The resulting agent operates on a start-stop-resume execution model,
  * consuming zero resources between event processing cycles while maintaining conversation
  * state in persistent memory.
+ * 
+ * @remark
+ * **Execution Model:**
+ * The agent follows a start-stop-resume pattern. On initialization, it builds context from
+ * the input event, then enters a ReAct (Reason+Act) cognitive loop. When calling Arvo services,
+ * it persists state to memory and suspends, enabling any worker to resume it later. This
+ * eliminates long-running processes and enables horizontal scaling.
  *
- * @remarks
- * The agent operates on a start-stop-resume execution model where it receives an event, invokes 
- * the LLM with available tools (internal Typescript functions, MCP external sources, or Arvo services), 
- * and either continues immediately for synchronous tools or suspends execution for service calls 
- * until responses arrive. When the LLM requests multiple tools simultaneously, priority-based orchestration 
- * ensures only the highest-priority batch executes (enabling "human-approval-first" patterns), while contract 
- * versioning enforces that you provide complete handler implementations for all defined versions 
- * (enabling safe evolution of prompts, models, and output schemas across v1, v2, etc.). The optional permission 
- * manager adds deterministic authorization outside the LLM's control—blocked tools trigger permission request events, 
- * the agent suspends until external approval, then retries with updated permissions, creating a security layer 
- * immune to prompt injection.
- 
-* @param param - Configuration object defining the agent's contracts, tools, memory backend,
+ * **Tool Ecosystem:**
+ * - **Internal Tools:** Synchronous functions for fast, CPU-bound operations.
+ * - **MCP Tools:** External tools via Model Context Protocol (filesystem, databases, APIs).
+ * - **Arvo Services:** Asynchronous event-driven services that trigger suspension.
+ *
+ * Both Internal and MCP tools execute synchronously within the loop, while Arvo service calls
+ * cause the agent to emit events and suspend until responses arrive.
+ *
+ * **Priority Batch Execution:**
+ * When the LLM requests multiple tools, they are sorted by priority. Only the highest-priority
+ * batch executes; lower-priority calls are dropped. This enforces safety guardrails (e.g.,
+ * requiring human approval before destructive actions).
+ *
+ * **Permission Management:**
+ * Tools can be placed under permission policy via `explicitPermissionRequired`. The permission
+ * manager evaluates each tool call as APPROVED (execute), DENIED (block permanently), or
+ * REQUESTABLE (block and emit permission request). Permission state persists across suspensions.
+ *
+ * **Self-Correction:**
+ * If the LLM's outputs fails contract schema validation, the error is fed back and the
+ * agent retries, enabling automatic repair of malformed responses or tools calls.
+ * 
+ * @param param - Configuration object defining the agent's contracts, tools, memory backend,
  *                 LLM integration, and version-specific behavior handlers.
  *
  * @returns An ArvoResumable instance that participates in the event fabric as a standard
@@ -84,16 +101,17 @@ import {
  *       name: 'check_time',
  *       description: 'Returns current server time in ISO format',
  *       input: z.object({}),
- *       output: z.object({ time: z.string() }),
- *       fn: async () => ({ time: new Date().toISOString() })
+ *       fn: async () => ({ data: { time: new Date().toISOString() } })
  *     })
  *   },
- *   llm: openaiLLMIntegration(new OpenAI(), { model: 'gpt-4o' }),
+ *   inferenceConfig: {
+ *      llm: openaiLLMIntegration(new OpenAI(), { model: 'gpt-4o' }),
+ *   },
  *   memory: memory,
- *   permissionManager: new ToolPermissionManager(),
+ *   permissionManager: new SimplePermissionManager(),
  *   handler: {
  *     '1.0.0': {
- *       permissionPolicy: async ({ services }) => [
+ *       explicitPermissionRequired: async ({ services }) => [
  *         services.billing.name  // Require permission for billing calls
  *       ],
  *       context: AgentDefaults.CONTEXT_BUILDER(async ({ tools }) =>
