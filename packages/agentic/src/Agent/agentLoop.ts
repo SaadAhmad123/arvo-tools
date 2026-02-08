@@ -121,6 +121,7 @@ export const agentLoop = async (
           try {
             messages = AgentMessageSchema.array().parse(
               (await param.preInferenceHook?.({
+                subject: param.permissionManagerContext.subject,
                 messages,
                 system: param.system,
                 tools: param.tools,
@@ -195,6 +196,7 @@ export const agentLoop = async (
             try {
               pihResult =
                 (await param.postInferenceHook({
+                  subject: param.permissionManagerContext.subject,
                   inference: response,
                   span,
                   agentCycles: {

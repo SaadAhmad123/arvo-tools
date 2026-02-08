@@ -272,6 +272,7 @@ export type AgentOutputBuilder<
 /**
  * Hook executed before the inference request is sent to the LLM integration.
  *
+ * @param param.subject - The workflow subject.
  * @param param.system - The current system prompt being sent to the LLM.
  * @param param.messages - The full message history being sent for inference.
  * @param param.tools - The tool definitions available to the LLM for this inference.
@@ -284,6 +285,7 @@ export type AgentOutputBuilder<
  * - `undefined`: Use the original messages without modification.
  */
 export type PreInferenceHook = (param: {
+  subject: string;
   system: string | null;
   messages: AgentMessage[];
   tools: AgentToolDefinition[];
@@ -303,6 +305,7 @@ export type PreInferenceHook = (param: {
 /**
  * Hook executed immediately after the LLM integration returns its output.
  *
+ * @param param.subject - The workflow subject.
  * @param param.inference - The output returned from the LLM integration.
  * @param param.span - The current OTEL span
  * @param param.agentCycles - The current agent cycle configuration
@@ -319,6 +322,7 @@ export type PreInferenceHook = (param: {
  */
 export type PostInferenceHook = (
   param: {
+    subject: string;
     inference: AgentLLMIntegrationOutput;
     span: Span;
     agentCycles: {
