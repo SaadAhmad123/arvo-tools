@@ -1,5 +1,11 @@
 # @arvo-tools/agentic
 
+## 2.0.1
+
+### Patch Changes
+
+- 30ebedd: Passed current subject to the inference hooks for workflow awareness
+
 ## 2.0.0
 
 ### Major Changes
