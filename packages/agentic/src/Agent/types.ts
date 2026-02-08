@@ -63,6 +63,11 @@ export type AnyArvoOrchestratorContract = ArvoOrchestratorContract<any, any>;
 // biome-ignore lint/suspicious/noExplicitAny: Needs to be genral
 export type AnyArvoContract = ArvoContract<any, any, any>;
 
+// biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+export type AgentToolOutputTransformer<T = any> = (
+  data: T,
+) => PromiseAble<AgentMessage | AgentMessage[]>;
+
 /**
  * Defines a Distributed Tool (Arvo Service) available to the Agent.
  *
@@ -73,10 +78,12 @@ export type AnyArvoContract = ArvoContract<any, any, any>;
  * 3. The remote Service processes the event and replies.
  * 4. The Agent Resumes.
  */
-export type AgentServiceContract = {
-  /** The Versioned Contract of the service the agent can call. */
+export type AgentServiceContract<
   // biome-ignore lint/suspicious/noExplicitAny: Needs to general
-  contract: VersionedArvoContract<any, any>;
+  TContract extends VersionedArvoContract<any, any> = VersionedArvoContract<any, any>,
+> = {
+  /** The Versioned Contract of the service the agent can call. */
+  contract: TContract;
   /**
    * Specific event domains to route the request to.
    * Useful for distinguishing between event deliver channels (e.g. `human.interaction`).
@@ -99,6 +106,13 @@ export type AgentServiceContract = {
    * 6. LLM sees approval, and *now* re-issues the `calculate_refund` call.
    */
   priority?: number;
+
+  transformer?: AgentToolOutputTransformer<{
+    toolUseId: string;
+    type: string;
+    // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+    data: Record<string, any>;
+  }>;
 };
 
 /**

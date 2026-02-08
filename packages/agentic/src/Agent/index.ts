@@ -4,6 +4,7 @@ import {
   cleanString,
   exceptionToSpan,
   getOtelHeaderFromSpan,
+  type VersionedArvoContract,
 } from 'arvo-core';
 import {
   type ArvoResumableHandler,
@@ -121,9 +122,16 @@ export const createArvoAgent = <
   permissionManager,
   defaultEventEmissionDomains,
 }: CreateArvoAgentParam<TSelfContract, TServiceContract, TTools>) => {
-  const serviceContracts = Object.fromEntries(
-    Object.entries(contracts.services).map(([key, { contract }]) => [key, contract]),
-  ) as { [K in keyof TServiceContract & string]: TServiceContract[K]['contract'] };
+  // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+  const serviceContracts: Record<string, VersionedArvoContract<any, any>> = {};
+  const serviceTransformers: Record<string, NonNullable<AgentServiceContract['transformer']>> = {};
+
+  for (const [key, { contract, transformer }] of Object.entries(contracts.services)) {
+    serviceContracts[key] = contract;
+    if (transformer) {
+      serviceTransformers[contract.accepts.type] = transformer;
+    }
+  }
 
   const serviceTypeToDomainMap = Object.fromEntries(
     Object.values(contracts.services)
@@ -311,7 +319,7 @@ export const createArvoAgent = <
                 awaitingToolCalls: Object.fromEntries(
                   (response.toolCalls ?? []).map((item) => [
                     item.toolUseId,
-                    { type: item.name, data: null },
+                    { type: item.name, responseEventType: null, data: null },
                   ]),
                 ),
                 totalExecutionUnits: response.executionUnits,
@@ -360,6 +368,8 @@ export const createArvoAgent = <
             if (service?.parentid && resumedContext.awaitingToolCalls[service.parentid]) {
               // biome-ignore lint/style/noNonNullAssertion: It cannot be null. The if clause does already
               resumedContext.awaitingToolCalls[service.parentid]!.data = service.data;
+              // biome-ignore lint/style/noNonNullAssertion: It cannot be null. The if clause does already
+              resumedContext.awaitingToolCalls[service.parentid]!.responseEventType = service.type;
 
               if (service.type === permissionManager?.contract?.emitList?.[0]?.type) {
                 await permissionManager?.set({
@@ -386,9 +396,9 @@ export const createArvoAgent = <
               return { context: AgentStateSchema.parse(resumedContext) };
             }
 
-            const messages = [...resumedContext.messages];
+            let messages = [...resumedContext.messages];
 
-            for (const [toolUseId, { type, data }] of Object.entries(
+            for (const [toolUseId, { type, responseEventType, data }] of Object.entries(
               resumedContext.awaitingToolCalls,
             )) {
               if (type === permissionManager?.contract?.accepts?.type) {
@@ -402,15 +412,28 @@ export const createArvoAgent = <
                 });
                 continue;
               }
-              messages.push({
-                role: 'user',
-                content: {
-                  type: 'tool_result',
+              if (serviceTransformers[type] && responseEventType && data) {
+                const transformedResult = await serviceTransformers[type]({
+                  type: responseEventType,
+                  data,
                   toolUseId,
-                  content: JSON.stringify(data ?? {}),
-                },
-                seenCount: 0,
-              });
+                });
+                if (Array.isArray(transformedResult)) {
+                  messages = [...messages, ...transformedResult];
+                } else {
+                  messages.push(transformedResult);
+                }
+              } else {
+                messages.push({
+                  role: 'user',
+                  content: {
+                    type: 'tool_result',
+                    toolUseId,
+                    content: JSON.stringify(data ?? {}),
+                  },
+                  seenCount: 0,
+                });
+              }
             }
 
             const response = await agentLoop(
@@ -447,7 +470,7 @@ export const createArvoAgent = <
               awaitingToolCalls: Object.fromEntries(
                 (response.toolCalls ?? []).map((item) => [
                   item.toolUseId,
-                  { type: item.name, data: null },
+                  { type: item.name, data: null, responseEventType: null },
                 ]),
               ),
               totalExecutionUnits: response.executionUnits,

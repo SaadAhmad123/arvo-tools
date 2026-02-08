@@ -245,7 +245,7 @@ export const agentLoop = async (
           if (response.type === 'tool_call') {
             const arvoToolCalls: AgentToolCallContent[] = [];
             const mcpToolResultPromises: Promise<AgentToolResultContent>[] = [];
-            const internalToolResultPromises: Promise<AgentToolResultContent>[] = [];
+            const internalToolResultPromises: Promise<AgentMessage | AgentMessage[]>[] = [];
             const prioritizedToolCalls = prioritizeToolCalls(response.toolRequests, nameToToolMap);
 
             const toolPermissionRequest: Parameters<IPermissionManager['get']>[0]['tools'] = {};
@@ -456,6 +456,7 @@ export const agentLoop = async (
                     const serverConfig = (
                       resolvedToolDef as unknown as AgentToolDefinition<AgentInternalTool>
                     ).serverConfig;
+
                     if (
                       !(
                         'fn' in serverConfig.contract &&
@@ -464,27 +465,63 @@ export const agentLoop = async (
                       )
                     ) {
                       return {
-                        type: 'tool_result',
-                        toolUseId: item.toolUseId,
-                        content: 'Invalid internal tool call',
+                        role: 'user' as const,
+                        seenCount: 0,
+                        content: {
+                          type: 'tool_result',
+                          toolUseId: item.toolUseId,
+                          content: 'Invalid internal tool call',
+                        },
                       };
                     }
 
-                    const response = await serverConfig.contract
-                      .fn(item.input, { otelInfo })
-                      ?.catch((err: Error) => ({
-                        type: 'error',
-                        name: err.name,
-                        message: err.message,
-                      }));
+                    try {
+                      const response =
+                        (await serverConfig.contract.fn(item.input, {
+                          otelInfo,
+                          toolUseId: item.toolUseId,
+                        })) ?? null;
 
-                    return {
-                      type: 'tool_result',
-                      toolUseId: item.toolUseId,
-                      content: response
-                        ? JSON.stringify(response)
-                        : 'No response available from the internal tool',
-                    };
+                      if (response && 'messages' in response) {
+                        return response.messages;
+                      }
+
+                      if (response && 'data' in response) {
+                        return {
+                          role: 'user' as const,
+                          seenCount: 0,
+                          content: {
+                            type: 'tool_result',
+                            toolUseId: item.toolUseId,
+                            content: JSON.stringify(response.data),
+                          },
+                        };
+                      }
+
+                      return {
+                        role: 'user',
+                        seenCount: 0,
+                        content: {
+                          type: 'tool_result',
+                          toolUseId: item.toolUseId,
+                          content: 'Tool executed successfully.',
+                        },
+                      };
+                    } catch (err) {
+                      return {
+                        role: 'user' as const,
+                        seenCount: 0,
+                        content: {
+                          type: 'tool_result',
+                          toolUseId: item.toolUseId,
+                          content: JSON.stringify({
+                            type: 'error',
+                            name: (err as Error).name,
+                            message: (err as Error).message,
+                          }),
+                        },
+                      };
+                    }
                   })(),
                 );
               } else if (resolvedToolDef.serverConfig.kind === 'arvo') {
@@ -523,7 +560,13 @@ export const agentLoop = async (
               messages.push({ role: 'user', content: item, seenCount: 0 });
             }
             for (const item of await Promise.all(internalToolResultPromises)) {
-              messages.push({ role: 'user', content: item, seenCount: 0 });
+              if (Array.isArray(item)) {
+                item.forEach((i) => {
+                  messages.push(i);
+                });
+              } else {
+                messages.push(item);
+              }
             }
             if (param.permissionManager && Object.keys(toolsPendingPermission).length) {
               const toolPermissionRequest = await param.permissionManager?.requestBuilder({

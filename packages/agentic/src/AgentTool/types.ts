@@ -1,4 +1,5 @@
 import type z from 'zod';
+import type { AgentMessage, AgentToolResultContent } from '../Agent/types';
 import type { OtelInfoType, PromiseAble } from '../types';
 
 /**
@@ -19,8 +20,6 @@ import type { OtelInfoType, PromiseAble } from '../types';
 export type AgentInternalTool<
   // biome-ignore lint/suspicious/noExplicitAny: Needs to general
   TInputSchema extends z.ZodTypeAny = any,
-  // biome-ignore lint/suspicious/noExplicitAny: Needs to general
-  TOutputSchema extends z.ZodTypeAny = any,
 > = {
   /**
    * The unique identifier for this tool (e.g. `calculator`, `get_current_time`).
@@ -42,12 +41,6 @@ export type AgentInternalTool<
   input: TInputSchema;
 
   /**
-   * Zod Schema defining what this tool returns.
-   * Used for type inference and documentation, though runtime validation of the result is optional.
-   */
-  output: TOutputSchema;
-
-  /**
    * If the LLM attempts to call multiple tools in parallel (e.g. `delete_user` + `human_approval`),
    * Arvo sorts calls by priority and **only executes the highest priority batch**.
    * Lower priority calls are silently dropped to enforce safety/auth guardrails.
@@ -60,11 +53,33 @@ export type AgentInternalTool<
    * The implementation logic.
    *
    * @param input - The validated arguments matching `TInputSchema`. You do not need to re-validate.
-   * @param config - Observability context (Span/Headers) to link any internal logging or network calls.
+   * @param config - Observability context (Span/Headers) to link any internal logging or network calls
+   *                 and the toolUseId
    * @returns The result matching `TOutputSchema`.
    */
   fn: (
     input: z.infer<TInputSchema>,
-    config: { otelInfo: OtelInfoType },
-  ) => PromiseAble<z.infer<TOutputSchema>>;
+    config: { otelInfo: OtelInfoType; toolUseId: string },
+  ) => PromiseAble<
+    | {
+        messages:
+          | {
+              role: 'user';
+              seenCount: number;
+              content: AgentToolResultContent;
+            }
+          | [
+              {
+                role: 'user';
+                seenCount: number;
+                content: AgentToolResultContent;
+              },
+              ...AgentMessage[],
+            ];
+      }
+    // biome-ignore lint/suspicious/noExplicitAny: Needs to be general
+    | { data: Record<string, any> }
+    // biome-ignore lint/suspicious/noConfusingVoidType: Better DX
+    | void
+  >;
 };

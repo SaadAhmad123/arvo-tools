@@ -65,6 +65,38 @@ export const calculatorAgent: EventHandlerFactory<{
       services: {
         calculator: {
           contract: calculatorContract.version('1.0.0'),
+          transformer: ({ type, data, toolUseId }) => {
+            if (type === 'evt.calculator.execute.success') {
+              return [
+                {
+                  role: 'user',
+                  seenCount: 0,
+                  content: {
+                    type: 'tool_result',
+                    toolUseId,
+                    content: 'The result has been provided by the user below',
+                  },
+                },
+                {
+                  role: 'user',
+                  seenCount: 0,
+                  content: {
+                    type: 'text',
+                    content: JSON.stringify(data),
+                  },
+                },
+              ];
+            }
+            return {
+              role: 'user',
+              seenCount: 0,
+              content: {
+                type: 'tool_result',
+                toolUseId,
+                content: JSON.stringify(data),
+              },
+            };
+          },
         },
         humanReview: {
           contract: humanReviewContract.version('1.0.0'),
@@ -80,8 +112,7 @@ export const calculatorAgent: EventHandlerFactory<{
         input: z.object({
           note_to_self: z.string().describe('The string to record as a note to self'),
         }),
-        output: z.object({ recorded: z.boolean() }),
-        fn: () => ({ recorded: true }),
+        fn: () => {},
       }),
     },
     mcp: new MCPClient({

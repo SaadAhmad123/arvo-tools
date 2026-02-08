@@ -68,8 +68,17 @@ export const operatorAgent: EventHandlerFactory<{
         input: z.object({
           note_to_self: z.string().describe('The string to record as a note to self'),
         }),
-        output: z.object({ recorded: z.boolean() }),
-        fn: () => ({ recorded: true }),
+        fn: (_, { toolUseId }) => ({
+          messages: {
+            role: 'user',
+            seenCount: 0,
+            content: {
+              type: 'tool_result',
+              toolUseId,
+              content: 'Recorded',
+            },
+          },
+        }),
       }),
     },
     handler: {

@@ -22,7 +22,7 @@ const permissionManager = new SimplePermissionManager({
   domains: [HUMAN_INTERACTION_DOMAIN],
 });
 
-const preInferenceHook: PreInferenceHook = ({messages}) => {
+const preInferenceHook: PreInferenceHook = ({ messages }) => {
   return [
     ...messages,
     {
@@ -30,10 +30,10 @@ const preInferenceHook: PreInferenceHook = ({messages}) => {
       seenCount: 0,
       content: {
         type: 'text',
-        content: 'Please perform the requested task'
-      }
-    }
-  ]
+        content: 'Please perform the requested task',
+      },
+    },
+  ];
 };
 
 const tests: ArvoTestSuite = {

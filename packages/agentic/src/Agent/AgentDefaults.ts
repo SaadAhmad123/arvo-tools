@@ -43,7 +43,6 @@ const initSchema = z
   .object({
     message: z.string().describe('The input message to the agent'),
   })
-  .strict();
 
 const initMultiModalSchema = z
   .object({
@@ -61,7 +60,6 @@ const initMultiModalSchema = z
         'An optional list of base64 pdfs to read. An AI Agent must not send data via this field',
       ),
   })
-  .strict();
 
 /**
  * Default schemas and builders for common agent patterns.
@@ -134,8 +132,7 @@ export const AgentDefaults = {
       let messages: AgentMessage[] = [];
 
       if (
-        initMultiModalSchema.safeParse(param.input.data).success &&
-        (param.input.data.pdfBase64 || param.input.data.imageBase64)
+        initMultiModalSchema.safeParse(param.input.data).success
       ) {
         messages = [
           {

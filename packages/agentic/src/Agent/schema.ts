@@ -71,6 +71,7 @@ export const AgentStateSchema = z.object({
     z.string(),
     z.object({
       type: z.string(),
+      responseEventType: z.string().nullable(),
       data: z.record(z.string(), z.any()).nullable(),
     }),
   ),

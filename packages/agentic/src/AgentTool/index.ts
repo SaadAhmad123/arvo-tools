@@ -29,20 +29,19 @@ import type { AgentInternalTool } from './types';
  *   name: 'get_time',
  *   description: 'Returns current server time',
  *   input: z.object({}),
- *   output: z.object({ time: z.string() }),
- *   fn: () => ({ time: new Date().toISOString() })
+ *   fn: () => {...}
  * });
  * ```
  */
-export const createAgentTool = <
-  TInputSchema extends z.ZodTypeAny,
-  TOutputSchema extends z.ZodTypeAny,
->(
-  param: AgentInternalTool<TInputSchema, TOutputSchema>,
+export const createAgentTool = <TInputSchema extends z.ZodTypeAny>(
+  param: AgentInternalTool<TInputSchema>,
 ) =>
   ({
     ...param,
-    fn: async (input: z.infer<TInputSchema>, config: { otelInfo: OtelInfoType }) =>
+    fn: async (
+      input: z.infer<TInputSchema>,
+      config: { otelInfo: OtelInfoType; toolUseId: string },
+    ) =>
       await ArvoOpenTelemetry.getInstance().startActiveSpan({
         name: `AgentTool<${param.name}>.execute`,
         disableSpanManagement: true,
@@ -68,12 +67,17 @@ export const createAgentTool = <
               throw new Error(
                 `Invalid tool input data. Please send the correct data and its structure as per the input schema. ${inputValidation.error.toString()}`,
               );
-            const result = await param.fn(inputValidation.data, {
-              otelInfo: {
-                span,
-                headers: getOtelHeaderFromSpan(span),
-              },
-            });
+            const result =
+              (await param.fn(inputValidation.data, {
+                otelInfo: {
+                  span,
+                  headers: getOtelHeaderFromSpan(span),
+                },
+                toolUseId: config.toolUseId,
+              })) ?? null;
+            if (result === null) {
+              return;
+            }
             span.setAttribute(
               OpenInferenceSemanticConventions.OUTPUT_VALUE,
               JSON.stringify(result),
@@ -87,4 +91,4 @@ export const createAgentTool = <
           }
         },
       }),
-  }) as AgentInternalTool<TInputSchema, TOutputSchema>;
+  }) as AgentInternalTool<TInputSchema>;
