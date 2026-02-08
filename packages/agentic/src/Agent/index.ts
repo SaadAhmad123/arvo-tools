@@ -43,7 +43,7 @@ import {
  * in your Arvo system. The resulting agent operates on a start-stop-resume execution model,
  * consuming zero resources between event processing cycles while maintaining conversation
  * state in persistent memory.
- * 
+ *
  * @remark
  * **Execution Model:**
  * The agent follows a start-stop-resume pattern. On initialization, it builds context from
@@ -72,7 +72,7 @@ import {
  * **Self-Correction:**
  * If the LLM's outputs fails contract schema validation, the error is fed back and the
  * agent retries, enabling automatic repair of malformed responses or tools calls.
- * 
+ *
  * @param param - Configuration object defining the agent's contracts, tools, memory backend,
  *                 LLM integration, and version-specific behavior handlers.
  *
