@@ -1,15 +1,19 @@
-import type { Span } from '@opentelemetry/api';
 import type { OpenTelemetryHeaders } from 'arvo-core';
 
-export type OtelInfoType = {
-  span: Span;
-  headers: OpenTelemetryHeaders;
-};
-
-export type NonEmptyArray<T> = [T, ...T[]];
-
 export type PromiseAble<T> = Promise<T> | T;
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+export type JsonAble = Record<string, JsonValue>;
 
-// biome-ignore lint/suspicious/noExplicitAny: Needs to be general
-export type Partialize<T extends Record<string, any>, K extends keyof T> = Omit<T, K> &
-  Partial<Pick<T, K>>;
+export type ImageContentType =
+  `image/${'jpeg' | 'png' | 'gif' | 'webp' | 'svg+xml' | 'bmp' | 'tiff'}`;
+export type AudioContentType = `audio/${'mpeg' | 'mp4' | 'wav' | 'ogg' | 'webm' | 'flac'}`;
+export type VideoContentType = `video/${'mp4' | 'webm' | 'ogg' | 'quicktime' | 'x-msvideo'}`;
+export type ApplicationContentType =
+  `application/${'pdf' | 'json' | 'xml' | 'octet-stream' | 'zip' | 'gzip'}`;
+export type TextContentType =
+  `text/${'plain' | 'html' | 'css' | 'javascript' | 'csv' | 'xml' | 'markdown'}`;
+
+export type ExecutionMetadataType = {
+  otelHeaders: OpenTelemetryHeaders;
+};
