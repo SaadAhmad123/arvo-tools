@@ -48,8 +48,8 @@ export interface IErrorResultData {
   body(): PromiseAble<string>;
 }
 
-export interface ITool<T extends string = string> {
-  type: T;
+export interface ITool {
+  name: string;
   init(options?: ExecutionMetadataType): PromiseAble<void>;
   close(options?: ExecutionMetadataType): PromiseAble<void>;
   has(toolName: string, options?: ExecutionMetadataType): PromiseAble<boolean>;

@@ -38,8 +38,8 @@ export type FunctionToolParam<T extends z.ZodTypeAny> = {
   }) => PromiseAble<Array<MediaResultData | JsonResultData> | void>;
 };
 
-export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements ITool<'FunctionTool'> {
-  public readonly type = 'FunctionTool' as const;
+export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements ITool {
+  public readonly type = 'FunctionTool';
   public readonly name: FunctionToolParam<T>['description'];
   public readonly description: FunctionToolParam<T>['description'];
   public readonly input: FunctionToolParam<T>['input'];
