@@ -256,7 +256,6 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should successfully dispatch valid event and return job ID', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-
         config: { connectionString },
         migrate: 'dangerousely_force_migration',
       });
@@ -290,8 +289,7 @@ describe('PostgresEventBroker - Custom Functionality Tests', () => {
     it('should execute average workflow and complete successfully', async () => {
       const memory = await connectPostgresMachineMemory({
         version: 1,
-
-        config: { connectionString },
+        config: { connectionString, enableOtel: true },
         migrate: 'dangerousely_force_migration',
       });
       const broker = new PostgresEventBroker({ connectionString });

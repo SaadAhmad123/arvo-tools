@@ -6,7 +6,7 @@ import { NodeSDK } from '@opentelemetry/sdk-node';
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-node';
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 
-const serviceName = 'tests-arvo-tools/agentic';
+const serviceName = 'tests-arvo-tools/concurrent';
 
 const jaegerExporter = new HTTPExporter({
   url: 'http://localhost:6001/jaeger/v1/traces',

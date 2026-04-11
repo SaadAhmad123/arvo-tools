@@ -1,20 +1,21 @@
 import {
-  INPUT_MIME_TYPE,
+  // INPUT_MIME_TYPE,
   INPUT_VALUE,
   MimeType,
   OpenInferenceSpanKind,
   OUTPUT_MIME_TYPE,
   OUTPUT_VALUE,
   SemanticConventions,
-  TOOL_DESCRIPTION,
-  TOOL_JSON_SCHEMA,
-  TOOL_NAME,
+  // TOOL_DESCRIPTION,
+  // TOOL_JSON_SCHEMA,
+  // TOOL_NAME,
 } from '@arizeai/openinference-semantic-conventions';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry, getOtelHeaderFromSpan, type OpenTelemetryHeaders } from 'arvo-core';
 import type { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { ExecutionMetadataType, PromiseAble } from '../types';
+import { ToolInputError, ToolNotFoundError } from './error';
 import { ErrorResultData, type JsonResultData, type MediaResultData } from './helpers';
 import type {
   IErrorResultData,
@@ -77,30 +78,26 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
   ): Promise<Array<IJsonResultData | IMediaResultData | IErrorResultData>> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: `Execute<${dispatch.name}>`,
-      spanOptions: {
-        attributes: {
-          [TOOL_NAME]: dispatch.name,
-          [INPUT_VALUE]: JSON.stringify(dispatch.args),
-          [INPUT_MIME_TYPE]: MimeType.JSON,
-          [SemanticConventions.OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.TOOL,
-        },
-      },
+      disableSpanManagement: true,
       context: {
         inheritFrom: 'TRACE_HEADERS',
         traceHeaders: options.otelHeaders,
       },
       fn: async (span) => {
         try {
-          if (dispatch.name !== this.name)
-            throw new Error(
+          if (dispatch.name !== this.name) {
+            throw new ToolNotFoundError(
               `This tools can only service the capability named '${this.name}. Provided is ${dispatch.name}'`,
             );
+          }
+
           const parseResult = this.input.safeParse(dispatch.args);
           if (parseResult.error) {
-            throw new Error(
+            throw new ToolInputError(
               `Invalid input arguments for tool ${this.name}. Please provide the correct arguments as per the input schema. Error -> ${parseResult.error.message}`,
             );
           }
+
           const result = await this.fn({
             id: dispatch.id,
             name: dispatch.name,
@@ -108,18 +105,7 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
           });
 
           const resultItems = result ?? [];
-          span?.setAttributes({
-            [OUTPUT_VALUE]: JSON.stringify(
-              await Promise.all(
-                resultItems.map(async (item) => {
-                  if (item.type === 'media')
-                    return { type: item.type, metadata: await item.metadata() };
-                  return { type: item.type, data: await item.body() };
-                }),
-              ),
-            ),
-            [OUTPUT_MIME_TYPE]: MimeType.JSON,
-          });
+          span.setStatus({ code: SpanStatusCode.OK });
           return resultItems;
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e));
@@ -142,10 +128,8 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
       disableSpanManagement: true,
       spanOptions: {
         attributes: {
-          [TOOL_NAME]: this.name,
-          [TOOL_DESCRIPTION]: this.description,
-          // biome-ignore lint/suspicious/noExplicitAny: Preventing deep nesting for typescript inference
-          [TOOL_JSON_SCHEMA]: JSON.stringify(zodToJsonSchema(this.input as any)),
+          [SemanticConventions.OPENINFERENCE_SPAN_KIND]: OpenInferenceSpanKind.TOOL,
+          [INPUT_VALUE]: JSON.stringify(dispatches),
         },
       },
       context: options?.otelHeaders
@@ -155,13 +139,30 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
           }
         : undefined,
       fn: async (span) => {
-        const otelHeaders = getOtelHeaderFromSpan(span);
         try {
-          return (
-            await Promise.all(
-              dispatches.map((dispatch) => this.singleExecute(dispatch, { otelHeaders })),
-            )
-          ).flat();
+          const otelHeaders = getOtelHeaderFromSpan(span);
+          const promises: Promise<Array<IJsonResultData | IMediaResultData | IErrorResultData>>[] =
+            [];
+          for (const dispatch of dispatches) {
+            promises.push(this.singleExecute(dispatch, { otelHeaders }));
+          }
+          const results = (await Promise.all(promises)).flat();
+
+          span?.setAttributes({
+            [OUTPUT_VALUE]: JSON.stringify(
+              await Promise.all(
+                results.map(async (item) => {
+                  if (item.type === 'media')
+                    return { type: item.type, metadata: await item.metadata() };
+                  return { type: item.type, data: await item.body() };
+                }),
+              ),
+            ),
+            [OUTPUT_MIME_TYPE]: MimeType.JSON,
+          });
+
+          span.setStatus({ code: SpanStatusCode.OK });
+          return results;
         } finally {
           span.end();
         }
