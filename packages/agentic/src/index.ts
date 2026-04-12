@@ -10,3 +10,6 @@ export type {
   IToolMetaData,
   MediaMetadataType,
 } from './Tools/interface';
+export { Toolset } from './Toolset';
+export { ToolNotExist } from './Toolset/helpers';
+export type { IToolNotExist } from './Toolset/interface';

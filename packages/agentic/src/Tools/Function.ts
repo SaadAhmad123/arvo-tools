@@ -14,6 +14,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry, getOtelHeaderFromSpan, type OpenTelemetryHeaders } from 'arvo-core';
 import type { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { setSpanError } from '../helpers';
 import type { ExecutionMetadataType, PromiseAble } from '../types';
 import { ToolInputError, ToolNotFoundError } from './error';
 import { ErrorResultData, type JsonResultData, type MediaResultData } from './helpers';
@@ -108,9 +109,7 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
           span.setStatus({ code: SpanStatusCode.OK });
           return resultItems;
         } catch (e) {
-          const err = e instanceof Error ? e : new Error(String(e));
-          span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-          span.recordException(err);
+          const err = setSpanError(span, e as Error);
           return [new ErrorResultData(dispatch.id, err)];
         } finally {
           span.end();
