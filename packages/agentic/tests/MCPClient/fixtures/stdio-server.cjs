@@ -4,13 +4,21 @@ const { z } = require('zod');
 
 const server = new McpServer({ name: 'test-server', version: '1.0.0' });
 
-server.registerTool('echo', { description: 'Echoes the message', inputSchema: { message: z.string() } }, async ({ message }) => ({
-  content: [{ type: 'text', text: message }],
-}));
+server.registerTool(
+  'echo',
+  { description: 'Echoes the message', inputSchema: { message: z.string() } },
+  async ({ message }) => ({
+    content: [{ type: 'text', text: message }],
+  }),
+);
 
-server.registerTool('add', { description: 'Adds two numbers', inputSchema: { a: z.number(), b: z.number() } }, async ({ a, b }) => ({
-  content: [{ type: 'text', text: String(a + b) }],
-}));
+server.registerTool(
+  'add',
+  { description: 'Adds two numbers', inputSchema: { a: z.number(), b: z.number() } },
+  async ({ a, b }) => ({
+    content: [{ type: 'text', text: String(a + b) }],
+  }),
+);
 
 server.registerTool('get_image', { description: 'Returns a test image' }, async () => ({
   content: [{ type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' }],
