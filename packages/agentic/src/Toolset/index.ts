@@ -85,6 +85,7 @@ export class Toolset<T extends Record<string, ITool>> {
           span.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           setSpanError(span, e as Error);
+          throw e;
         } finally {
           span.end();
         }
@@ -113,6 +114,7 @@ export class Toolset<T extends Record<string, ITool>> {
           await Promise.all(
             Object.values(this.tools).map(async (tool) => await tool.close({ otelHeaders })),
           );
+          this.toolIndex = {};
           span.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           setSpanError(span, e as Error);
