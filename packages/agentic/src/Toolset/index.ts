@@ -38,6 +38,10 @@ export class Toolset<T extends Record<string, ITool>> {
     this.tools = tools;
   }
 
+  has(toolName: string) {
+    return toolName in this.toolIndex;
+  }
+
   private async buildIndex() {
     const sourceData = await Promise.all(
       Object.entries(this.tools).map(async ([toolKey, tool]) => ({
