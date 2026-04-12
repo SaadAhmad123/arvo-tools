@@ -45,17 +45,17 @@ describe('Skill', () => {
     it('returns name and description for each skill', async () => {
       await tool.init();
       const meta = tool.metadata();
-      expect(meta['greet']?.name).toBe('greet');
-      expect(meta['greet']?.description).toBe('Greets a person by name with a friendly message.');
-      expect(meta['math']?.name).toBe('math');
-      expect(meta['summarise']?.name).toBe('summarise');
+      expect(meta?.greet?.name).toBe('greet');
+      expect(meta?.greet?.description).toBe('Greets a person by name with a friendly message.');
+      expect(meta?.math?.name).toBe('math');
+      expect(meta?.summarise?.name).toBe('summarise');
     });
 
     it('includes an inputSchema for each skill', async () => {
       await tool.init();
       const meta = tool.metadata();
-      expect(meta['greet']?.inputSchema).toBeDefined();
-      expect(meta['math']?.inputSchema).toBeDefined();
+      expect(meta?.greet?.inputSchema).toBeDefined();
+      expect(meta?.math?.inputSchema).toBeDefined();
     });
   });
 
