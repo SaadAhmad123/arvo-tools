@@ -483,9 +483,9 @@ describe('State Management - Read/Write Operations', () => {
         executionStatus: 'pending',
       };
 
-      await expect(
-        memory.write('test-subject', nonFailureData, null, metadata),
-      ).rejects.toThrow(/refusing to overwrite/i);
+      await expect(memory.write('test-subject', nonFailureData, null, metadata)).rejects.toThrow(
+        /refusing to overwrite/i,
+      );
 
       await releasePostgressMachineMemory(memory);
     });

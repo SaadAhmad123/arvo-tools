@@ -117,14 +117,25 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
             this.dbSchemaName,
             this.tables.state,
           ),
-          [id, JSON.stringify(data), resolvedExecutionStatus, resolvedParentSubject, resolvedInitiator, source],
+          [
+            id,
+            JSON.stringify(data),
+            resolvedExecutionStatus,
+            resolvedParentSubject,
+            resolvedInitiator,
+            source,
+          ],
         );
         let rootSubject: string;
         if (resolvedParentSubject === null) {
           rootSubject = id;
         } else {
           const parentResult = await client.query(
-            format('SELECT root_subject FROM %I.%I WHERE subject = $1', this.dbSchemaName, this.tables.hierarchy),
+            format(
+              'SELECT root_subject FROM %I.%I WHERE subject = $1',
+              this.dbSchemaName,
+              this.tables.hierarchy,
+            ),
             [resolvedParentSubject],
           );
           rootSubject = parentResult.rows[0]?.root_subject ?? id;
@@ -240,7 +251,14 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const resolvedExectionStatus = data.executionStatus ?? 'unknown';
         try {
           if (prevData === null) {
-            await this.writeNewState(client, id, data, resolvedExectionStatus as string, source, initiator);
+            await this.writeNewState(
+              client,
+              id,
+              data,
+              resolvedExectionStatus as string,
+              source,
+              initiator,
+            );
             return;
           }
           const currentVersion = prevData.__postgres_version_counter_data_$$__;
