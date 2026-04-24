@@ -1,7 +1,12 @@
 import { type Span, SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry } from 'arvo-core';
-import { type IMachineMemory, type MachineMemoryMetadata, Materialized } from 'arvo-event-handler';
-import { Pool, type PoolConfig } from 'pg';
+import {
+  type IMachineMemory,
+  type MachineMemoryMetadata,
+  Materialized,
+  OrchestrationExecutionStatus,
+} from 'arvo-event-handler';
+import { Pool, type PoolClient, type PoolConfig } from 'pg';
 import format from 'pg-format';
 import { validateTable } from './schema';
 import type { PostgressMachineMemoryV1Param } from './types';
@@ -88,6 +93,74 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private async writeNewState(
+    client: PoolClient,
+    id: string,
+    data: T,
+    resolvedExecutionStatus: string,
+    source: string,
+    initiator: MachineMemoryMetadata['initiator'],
+  ): Promise<void> {
+    const existing = await client.query(
+      format('SELECT version FROM %I.%I WHERE subject = $1', this.dbSchemaName, this.tables.state),
+      [id],
+    );
+
+    if (existing.rows.length === 0) {
+      try {
+        await client.query('BEGIN');
+        const resolvedParentSubject = (data.parentSubject as string | null | undefined) ?? null;
+        const resolvedInitiator = Materialized.isResolved(initiator) ? initiator.value : null;
+        await client.query(
+          format(
+            'INSERT INTO %I.%I (subject, data, version, execution_status, parent_subject, initiator, source, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, $5, $6, NOW(), NOW())',
+            this.dbSchemaName,
+            this.tables.state,
+          ),
+          [id, JSON.stringify(data), resolvedExecutionStatus, resolvedParentSubject, resolvedInitiator, source],
+        );
+        let rootSubject: string;
+        if (resolvedParentSubject === null) {
+          rootSubject = id;
+        } else {
+          const parentResult = await client.query(
+            format('SELECT root_subject FROM %I.%I WHERE subject = $1', this.dbSchemaName, this.tables.hierarchy),
+            [resolvedParentSubject],
+          );
+          rootSubject = parentResult.rows[0]?.root_subject ?? id;
+        }
+        await client.query(
+          format(
+            'INSERT INTO %I.%I (subject, parent_subject, root_subject, created_at) VALUES ($1, $2, $3, NOW())',
+            this.dbSchemaName,
+            this.tables.hierarchy,
+          ),
+          [id, resolvedParentSubject, rootSubject],
+        );
+        await client.query('COMMIT');
+        return;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    }
+
+    if (data.executionStatus !== OrchestrationExecutionStatus.FAILURE) {
+      throw new Error(
+        `State already exists for subject '${id}' but incoming write is not a failure state. Refusing to overwrite.`,
+      );
+    }
+
+    await client.query(
+      format(
+        'UPDATE %I.%I SET data = $1, version = version + 1, execution_status = $2, updated_at = NOW() WHERE subject = $3',
+        this.dbSchemaName,
+        this.tables.state,
+      ),
+      [JSON.stringify(data), resolvedExecutionStatus, id],
+    );
+  }
+
   async validateTableStructure(): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -167,58 +240,8 @@ export class PostgressMachineMemoryV1<T extends Record<string, unknown>>
         const resolvedExectionStatus = data.executionStatus ?? 'unknown';
         try {
           if (prevData === null) {
-            try {
-              await client.query('BEGIN');
-              const resolvedParentSubject = data.parentSubject ?? null;
-              const resolvedInitiator = Materialized.isResolved(initiator) ? initiator.value : null;
-
-              await client.query(
-                format(
-                  'INSERT INTO %I.%I (subject, data, version, execution_status, parent_subject, initiator, source, created_at, updated_at) VALUES ($1, $2, 1, $3, $4, $5, $6, NOW(), NOW())',
-                  this.dbSchemaName,
-                  this.tables.state,
-                ),
-                [
-                  id,
-                  JSON.stringify(data),
-                  resolvedExectionStatus,
-                  resolvedParentSubject,
-                  resolvedInitiator,
-                  source,
-                ],
-              );
-              let rootSubject: string;
-              if (resolvedParentSubject === null) {
-                rootSubject = id;
-              } else {
-                const parentResult = await client.query(
-                  format(
-                    'SELECT root_subject FROM %I.%I WHERE subject = $1',
-                    this.dbSchemaName,
-                    this.tables.hierarchy,
-                  ),
-                  [resolvedParentSubject],
-                );
-                rootSubject = parentResult.rows[0]?.root_subject ?? id;
-              }
-              await client.query(
-                format(
-                  'INSERT INTO %I.%I (subject, parent_subject, root_subject, created_at) VALUES ($1, $2, $3, NOW())',
-                  this.dbSchemaName,
-                  this.tables.hierarchy,
-                ),
-                [id, resolvedParentSubject, rootSubject],
-              );
-              await client.query('COMMIT');
-              return;
-            } catch (error) {
-              await client.query('ROLLBACK');
-              span?.setStatus({
-                code: SpanStatusCode.ERROR,
-                message: (error as Error).message,
-              });
-              throw error;
-            }
+            await this.writeNewState(client, id, data, resolvedExectionStatus as string, source, initiator);
+            return;
           }
           const currentVersion = prevData.__postgres_version_counter_data_$$__;
           const newVersion = currentVersion + 1;

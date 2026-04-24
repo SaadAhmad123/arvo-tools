@@ -1,4 +1,4 @@
-import { Materialized } from 'arvo-event-handler';
+import { Materialized, OrchestrationExecutionStatus } from 'arvo-event-handler';
 import { Client } from 'pg';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { connectPostgresMachineMemory, releasePostgressMachineMemory } from '../src';
@@ -416,6 +416,76 @@ describe('State Management - Read/Write Operations', () => {
 
       expect(fulfilled.length).toBe(1);
       expect(rejected.length).toBe(1);
+
+      await releasePostgressMachineMemory(memory);
+    });
+  });
+
+  describe('Write operations - Insert conflict (prevData = null, state exists)', () => {
+    it('should overwrite with failure state when state already exists', async () => {
+      const memory = await connectPostgresMachineMemory<TestContext>({
+        version: 1,
+        schema: testSchema,
+        tables: testTables,
+        config: { connectionString },
+      });
+
+      const initialData: TestContext = {
+        numbers: [1, 2, 3],
+        sum: null,
+        average: null,
+        executionStatus: 'running',
+      };
+
+      await memory.write('test-subject', initialData, null, metadata);
+      const afterInsert = await memory.read('test-subject');
+      // biome-ignore lint/suspicious/noExplicitAny: Need to be general
+      expect((afterInsert as any).__postgres_version_counter_data_$$__).toBe(1);
+
+      const failureData: TestContext = {
+        numbers: [],
+        sum: null,
+        average: null,
+        executionStatus: OrchestrationExecutionStatus.FAILURE,
+      };
+
+      await memory.write('test-subject', failureData, null, metadata);
+
+      const result = await memory.read('test-subject');
+      expect(result?.executionStatus).toBe(OrchestrationExecutionStatus.FAILURE);
+      // biome-ignore lint/suspicious/noExplicitAny: Need to be general
+      expect((result as any).__postgres_version_counter_data_$$__).toBe(2);
+
+      await releasePostgressMachineMemory(memory);
+    });
+
+    it('should throw when state already exists and incoming data is not a failure state', async () => {
+      const memory = await connectPostgresMachineMemory<TestContext>({
+        version: 1,
+        schema: testSchema,
+        tables: testTables,
+        config: { connectionString },
+      });
+
+      const initialData: TestContext = {
+        numbers: [1, 2, 3],
+        sum: null,
+        average: null,
+        executionStatus: 'running',
+      };
+
+      await memory.write('test-subject', initialData, null, metadata);
+
+      const nonFailureData: TestContext = {
+        numbers: [4, 5, 6],
+        sum: null,
+        average: null,
+        executionStatus: 'pending',
+      };
+
+      await expect(
+        memory.write('test-subject', nonFailureData, null, metadata),
+      ).rejects.toThrow(/refusing to overwrite/i);
 
       await releasePostgressMachineMemory(memory);
     });
