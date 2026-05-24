@@ -76,6 +76,8 @@ export interface IAgentCore {
    */
   stream(
     input: AgentCoreStreamInput,
-    options?: ExecutionMetadataType & { onEvent?: (event: AgentCoreStreamEvent) => PromiseAble<void> },
+    options?: ExecutionMetadataType & {
+      onEvent?: (event: AgentCoreStreamEvent) => PromiseAble<void>;
+    },
   ): Promise<AgentCoreStreamOutput>;
 }
