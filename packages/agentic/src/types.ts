@@ -14,6 +14,13 @@ export type ApplicationContentType =
 export type TextContentType =
   `text/${'plain' | 'html' | 'css' | 'javascript' | 'csv' | 'xml' | 'markdown'}`;
 
+export type AnyContentType =
+  | ImageContentType
+  | AudioContentType
+  | VideoContentType
+  | ApplicationContentType
+  | TextContentType;
+
 export type ExecutionMetadataType = {
   otelHeaders: OpenTelemetryHeaders;
 };
