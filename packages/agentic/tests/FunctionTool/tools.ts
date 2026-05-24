@@ -5,9 +5,9 @@ export const addTool = new FunctionTool({
   name: 'add',
   description: 'Adds two numbers and returns the sum',
   input: z.object({ a: z.number(), b: z.number() }),
-  fn: ({ data }) => {
+  fn: ({ id, data }) => {
     const { a, b } = data as { a: number; b: number };
-    return [new JsonResultData('result', { sum: a + b })];
+    return [new JsonResultData(id, { sum: a + b })];
   },
 });
 

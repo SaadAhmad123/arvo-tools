@@ -39,7 +39,7 @@ describe.skipIf(!apiKey)('AnthropicAgentCore — integration', () => {
   function makeCore() {
     return new AnthropicAgentCore({
       client: new Anthropic({ apiKey }),
-      invoke: { model: 'claude-opus-4-7', max_tokens: 2048 },
+      invoke: { model: 'claude-sonnet-4-0', max_tokens: 2048 },
     });
   }
 

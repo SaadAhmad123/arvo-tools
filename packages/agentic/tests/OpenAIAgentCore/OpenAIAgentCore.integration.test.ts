@@ -313,20 +313,17 @@ describe.skipIf(!apiKey)('OpenAIAgentCore — integration', () => {
     await toolset.close();
 
     const toolResultContent = await Promise.all(
-      dispatches.map(async (dispatch, i) => {
-        const r = results[i];
-        return {
-          type: 'tool_result' as const,
-          id: dispatch.id,
-          isError: r?.type !== 'json',
-          content: [
-            {
-              type: 'text' as const,
-              text: r?.type === 'json' ? JSON.stringify(await r.body()) : 'Tool execution failed',
-            },
-          ],
-        };
-      }),
+      results.map(async (r) => ({
+        type: 'tool_result' as const,
+        id: r.id,
+        isError: r.type !== 'json',
+        content: [
+          {
+            type: 'text' as const,
+            text: r.type === 'json' ? JSON.stringify(await r.body()) : 'Tool execution failed',
+          },
+        ],
+      })),
     );
 
     const turn2 = await core.stream({
