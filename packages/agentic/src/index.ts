@@ -1,8 +1,6 @@
 export type {
-  AgentBudgetAccumulated,
-  AgentBudgetLimits,
-  AgentBudgetLimitToken,
-  AgentBudgetRecordParam,
+  AgentBudget,
+  AgentBudgetToken,
   AgentBudgetTrackerState,
 } from './AgentBudgetTracker';
 export { AgentBudgetTracker } from './AgentBudgetTracker';
@@ -31,3 +29,4 @@ export { Skill, type SkillParam } from './Tools/Skill';
 export { Toolset } from './Toolset';
 export { ToolNotExist } from './Toolset/helpers';
 export type { IToolNotExist } from './Toolset/interface';
+export type { NestedPartial } from './types';

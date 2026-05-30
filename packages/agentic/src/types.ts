@@ -1,6 +1,9 @@
 import type { OpenTelemetryHeaders } from 'arvo-core';
 
 export type PromiseAble<T> = Promise<T> | T;
+export type NestedPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? NestedPartial<T[K]> : T[K];
+};
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonAble = Record<string, JsonValue>;

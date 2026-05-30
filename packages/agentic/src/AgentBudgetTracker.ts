@@ -1,42 +1,16 @@
-export type AgentBudgetLimitToken =
-  | {
-      /** Maximum number of input tokens permitted across all iterations. */
-      input?: number;
-      /** Maximum number of output tokens permitted across all iterations. */
-      output: number;
-    }
-  | {
-      /** Maximum number of input tokens permitted across all iterations. */
-      input: number;
-      /** Maximum number of output tokens permitted across all iterations. */
-      output?: number;
-    };
+import type { NestedPartial } from './types';
 
-/**
- * The maximum allowed values for the tracked dimensions.
- * Must define `iterations`, `tokens`, or both — an empty object is not valid.
- */
-export type AgentBudgetLimits =
-  | {
-      /** Maximum number of LLM call iterations permitted. */
-      iterations: number;
-      tokens?: AgentBudgetLimitToken;
-    }
-  | {
-      iterations?: number;
-      tokens: AgentBudgetLimitToken;
-    };
+export type AgentBudgetToken = {
+  /** Maximum number of input tokens permitted across all iterations. */
+  input: number;
+  /** Maximum number of output tokens permitted across all iterations. */
+  output: number;
+};
 
-/** Running totals accumulated across all recorded LLM calls. */
-export type AgentBudgetAccumulated = {
-  /** Number of iterations recorded so far. */
+export type AgentBudget = {
+  /** Number of LLM call iterations. */
   iterations: number;
-  tokens: {
-    /** Input tokens consumed so far. */
-    input: number;
-    /** Output tokens consumed so far. */
-    output: number;
-  };
+  tokens: AgentBudgetToken;
 };
 
 /**
@@ -45,20 +19,8 @@ export type AgentBudgetAccumulated = {
  * allowing the tracker to be fully restored via {@link AgentBudgetTracker.fromState}.
  */
 export type AgentBudgetTrackerState = {
-  limits: AgentBudgetLimits;
-  accumulated: AgentBudgetAccumulated;
-};
-
-/** Usage to record after a single LLM call. */
-export type AgentBudgetRecordParam = {
-  /** Number of iterations consumed by this call (typically 1). */
-  iterations: number;
-  tokens: {
-    /** Input tokens consumed by this call. */
-    input: number;
-    /** Output tokens consumed by this call. */
-    output: number;
-  };
+  limits: AgentBudget;
+  accumulated: AgentBudget;
 };
 
 /**
@@ -83,15 +45,35 @@ export type AgentBudgetRecordParam = {
  * ```
  */
 export class AgentBudgetTracker {
-  private readonly limits: AgentBudgetLimits;
-  private accumulated: AgentBudgetAccumulated;
+  private readonly limits: AgentBudget;
+  private accumulated: AgentBudget;
 
   /**
    * Creates a fresh tracker with zeroed accumulated counts.
-   * @param limits - The ceiling values for iterations and tokens.
+   *
+   * Any field omitted from `param` falls back to the corresponding value in `_default`.
+   *
+   * @param param - Partial budget overrides. Omitted fields are filled from `_default`.
+   * @param _default - Baseline limits used when `param` does not specify a field.
+   *   Defaults to 10 iterations and 10000 input/output tokens.
    */
-  constructor(limits: AgentBudgetLimits) {
-    this.limits = limits;
+  constructor(
+    param: NestedPartial<AgentBudget> = {},
+    _default: AgentBudget = {
+      iterations: 10,
+      tokens: {
+        input: 10000,
+        output: 10000,
+      },
+    },
+  ) {
+    this.limits = {
+      iterations: param.iterations ?? _default.iterations,
+      tokens: {
+        input: param.tokens?.input ?? _default.tokens.input,
+        output: param.tokens?.output ?? _default.tokens.output,
+      },
+    };
     this.accumulated = { iterations: 0, tokens: { input: 0, output: 0 } };
   }
 
@@ -105,10 +87,7 @@ export class AgentBudgetTracker {
     const tracker = new AgentBudgetTracker(state.limits);
     tracker.accumulated = {
       iterations: state.accumulated.iterations,
-      tokens: {
-        input: state.accumulated.tokens.input,
-        output: state.accumulated.tokens.output,
-      },
+      tokens: { ...state.accumulated.tokens },
     };
     return tracker;
   }
@@ -119,7 +98,7 @@ export class AgentBudgetTracker {
    *
    * @param usage - The iterations and tokens consumed by this call.
    */
-  record(usage: AgentBudgetRecordParam): void {
+  record(usage: AgentBudget): void {
     this.accumulated.iterations += usage.iterations;
     this.accumulated.tokens.input += usage.tokens.input;
     this.accumulated.tokens.output += usage.tokens.output;
@@ -127,31 +106,13 @@ export class AgentBudgetTracker {
 
   /**
    * Returns `true` if every configured limit is still below its ceiling.
-   * Only the dimensions that were supplied at construction time are checked —
-   * unset dimensions are ignored.
    */
   shouldContinue(): boolean {
-    if (
-      this.limits.iterations !== undefined &&
-      this.accumulated.iterations >= this.limits.iterations
-    ) {
-      return false;
-    }
-    if (this.limits.tokens !== undefined) {
-      if (
-        this.limits.tokens.input !== undefined &&
-        this.accumulated.tokens.input >= this.limits.tokens.input
-      ) {
-        return false;
-      }
-      if (
-        this.limits.tokens.output !== undefined &&
-        this.accumulated.tokens.output >= this.limits.tokens.output
-      ) {
-        return false;
-      }
-    }
-    return true;
+    return (
+      this.accumulated.iterations < this.limits.iterations &&
+      this.accumulated.tokens.input < this.limits.tokens.input &&
+      this.accumulated.tokens.output < this.limits.tokens.output
+    );
   }
 
   /**
@@ -160,19 +121,10 @@ export class AgentBudgetTracker {
    * a tracker in a later execution.
    */
   exportState(): AgentBudgetTrackerState {
-    const tokensLimit = this.limits.tokens;
     return {
-      limits: {
-        ...(this.limits.iterations !== undefined && { iterations: this.limits.iterations }),
-        ...(tokensLimit !== undefined && {
-          tokens: {
-            ...(tokensLimit.input !== undefined && { input: tokensLimit.input }),
-            ...(tokensLimit.output !== undefined && { output: tokensLimit.output }),
-          } as AgentBudgetLimitToken,
-        }),
-      } as AgentBudgetLimits,
+      limits: { iterations: this.limits.iterations, tokens: { ...this.limits.tokens } },
       accumulated: {
-        ...this.accumulated,
+        iterations: this.accumulated.iterations,
         tokens: { ...this.accumulated.tokens },
       },
     };
