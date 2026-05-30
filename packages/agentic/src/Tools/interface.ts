@@ -48,6 +48,12 @@ export interface IErrorResultData {
   body(): PromiseAble<string>;
 }
 
+export interface IExternalToolResult {
+  id: string;
+  type: 'external_call';
+  body(): PromiseAble<JsonAble>;
+}
+
 export interface ITool {
   name: string;
   init(options?: ExecutionMetadataType): PromiseAble<void>;
@@ -57,5 +63,5 @@ export interface ITool {
   execute(
     dispatches: IToolDispatch[],
     options?: ExecutionMetadataType,
-  ): PromiseAble<Array<IJsonResultData | IMediaResultData | IErrorResultData>>;
+  ): PromiseAble<Array<IJsonResultData | IMediaResultData | IErrorResultData | IExternalToolResult>>;
 }

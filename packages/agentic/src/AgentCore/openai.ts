@@ -3,6 +3,7 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import { ArvoOpenTelemetry, exceptionToSpan, OpenInferenceSpanKind } from 'arvo-core';
 import type OpenAIClient from 'openai';
 import type { OpenAI } from 'openai';
+import { zodTextFormat } from 'openai/helpers/zod';
 import type { ResponseCreateParamsBase } from 'openai/resources/responses/responses';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type {
@@ -276,6 +277,15 @@ export class OpenAIAgentCore implements IAgentCore {
               ...(instructions ? { instructions } : {}),
               ...(tools.length ? { tools } : {}),
               stream: true,
+              text: {
+                ...(this.invoke.text ?? {}),
+                ...(input.outputSchema
+                  ? {
+                      // biome-ignore lint/suspicious/noExplicitAny: needs to be general
+                      format: zodTextFormat(input.outputSchema as any, 'event'),
+                    }
+                  : {}),
+              },
             });
 
             let textAccumulator = '';

@@ -1,5 +1,6 @@
 import type AnthropicClient from '@anthropic-ai/sdk';
 import type { Anthropic } from '@anthropic-ai/sdk';
+import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema';
 import type { MessageCreateParamsBase } from '@anthropic-ai/sdk/resources/messages';
 import { SemanticConventions } from '@arizeai/openinference-semantic-conventions';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -257,6 +258,27 @@ export class AnthropicAgentCore implements IAgentCore {
               ...(tools.length ? { tools } : {}),
               ...(systemPrompt ? { system: systemPrompt } : {}),
               stream: true,
+              output_config: {
+                ...(this.invoke.output_config ?? {}),
+                ...(input.outputSchema
+                  ? {
+                      format: {
+                        type: 'json_schema',
+                        schema: (() => {
+                          // biome-ignore lint/correctness/noUnusedVariables: This is fine
+                          const { $schema, ...schema } = zodToJsonSchema(
+                            // biome-ignore lint/suspicious/noExplicitAny: This is fine and needed here
+                            input.outputSchema as any,
+                            {
+                              definitionPath: '$defs',
+                            },
+                          );
+                          return transformJSONSchema(schema);
+                        })(),
+                      },
+                    }
+                  : {}),
+              },
             });
 
             for await (const event of anthropicStream) {

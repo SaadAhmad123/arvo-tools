@@ -39,7 +39,7 @@ describe.skipIf(!apiKey)('AnthropicAgentCore — integration', () => {
   function makeCore() {
     return new AnthropicAgentCore({
       client: new Anthropic({ apiKey }),
-      invoke: { model: 'claude-sonnet-4-0', max_tokens: 2048 },
+      invoke: { model: 'claude-haiku-4-5', max_tokens: 2048 },
     });
   }
 
@@ -336,6 +336,175 @@ describe.skipIf(!apiKey)('AnthropicAgentCore — integration', () => {
     if (turn2.stopReason !== 'end_turn') return;
     const text = turn2.message.content.find((c) => c.type === 'text');
     expect(text).toBeDefined();
+  });
+
+  it('produces a deeply nested JSON report conforming to a complex schema', async () => {
+    const projectReportSchema = z.object({
+      projectOverview: z.object({
+        codeName: z.string().min(2).max(50),
+        status: z.enum(['planning', 'in_progress', 'on_hold', 'completed']),
+        healthScore: z.number().int().min(1).max(10),
+        completionPercent: z.number().min(0).max(100),
+        startDate: z.string(),
+        projectedEndDate: z.string(),
+      }),
+      teamComposition: z
+        .array(
+          z.object({
+            role: z.enum(['lead', 'senior_engineer', 'engineer', 'designer', 'qa', 'devops', 'pm']),
+            headcount: z.number().int().min(1),
+            currentUtilization: z.number().min(0).max(100),
+            keyResponsibilities: z.array(z.string()).min(1).max(5),
+          }),
+        )
+        .min(2),
+      riskRegister: z
+        .array(
+          z.object({
+            riskId: z.string(),
+            title: z.string(),
+            category: z.enum(['technical', 'resource', 'schedule', 'budget', 'external']),
+            likelihood: z.enum(['low', 'medium', 'high']),
+            impact: z.enum(['low', 'medium', 'high', 'critical']),
+            mitigations: z.array(z.string()).min(1),
+            status: z.enum(['open', 'mitigating', 'closed']),
+          }),
+        )
+        .min(2),
+      sprintVelocity: z.object({
+        averagePointsPerSprint: z.number().positive(),
+        trend: z.enum(['improving', 'stable', 'declining']),
+        last3Sprints: z
+          .array(
+            z.object({
+              sprintNumber: z.number().int().positive(),
+              plannedPoints: z.number().int().min(0),
+              completedPoints: z.number().int().min(0),
+            }),
+          )
+          .min(3)
+          .max(3),
+      }),
+      technicalDebt: z.object({
+        estimatedHours: z.number().min(0),
+        severity: z.enum(['low', 'medium', 'high', 'critical']),
+        topAreas: z
+          .array(
+            z.object({
+              area: z.string(),
+              description: z.string(),
+              estimatedHoursToResolve: z.number().min(0),
+            }),
+          )
+          .min(2)
+          .max(5),
+      }),
+      recommendations: z
+        .array(
+          z.object({
+            priority: z.enum(['p0', 'p1', 'p2', 'p3']),
+            title: z.string().min(10),
+            description: z.string().min(20),
+            estimatedEffortDays: z.number().int().min(1),
+            expectedOutcome: z.string().min(10),
+          }),
+        )
+        .min(3),
+      executiveSummary: z.string().min(100),
+    });
+
+    const result = await makeCore().stream({
+      messages: [
+        {
+          role: 'system',
+          content: [
+            {
+              type: 'text',
+              text: 'You are a senior engineering manager producing structured project health reports. Always respond with a single valid JSON object — no markdown, no explanation.',
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: `Produce a project health report for a fictional mid-sized e-commerce platform migration project called "Phoenix" that is currently 40% complete and running slightly behind schedule due to infrastructure unknowns. The team has 8 engineers across multiple disciplines. Include at least 2 real risks, 3 sprint velocity entries, at least 2 technical debt areas, and at least 3 prioritised recommendations. The executive summary must be at least 100 characters.`,
+            },
+          ],
+        },
+      ],
+      tools: [],
+      outputSchema: projectReportSchema,
+      budget: new AgentBudgetTracker({
+        iterations: 5,
+        tokens: { input: 20_000, output: 8_000 },
+      }),
+    });
+
+    expect(result.stopReason).toBe('end_turn');
+    if (result.stopReason !== 'end_turn') return;
+
+    const json = result.message.content.find((c) => c.type === 'json');
+    expect(json).toBeDefined();
+    if (json?.type !== 'json') return;
+
+    const parsed = projectReportSchema.safeParse(json.data);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const data = parsed.data;
+    expect(data.teamComposition.length).toBeGreaterThanOrEqual(2);
+    expect(data.riskRegister.length).toBeGreaterThanOrEqual(2);
+    expect(data.sprintVelocity.last3Sprints).toHaveLength(3);
+    expect(data.technicalDebt.topAreas.length).toBeGreaterThanOrEqual(2);
+    expect(data.recommendations.length).toBeGreaterThanOrEqual(3);
+    expect(data.executiveSummary.length).toBeGreaterThanOrEqual(100);
+    expect(data.projectOverview.completionPercent).toBeGreaterThanOrEqual(0);
+    expect(data.projectOverview.completionPercent).toBeLessThanOrEqual(100);
+  });
+
+  describe('budget exhaustion', () => {
+    it('returns budget_exhausted when the API max_tokens limit truncates the response', async () => {
+      const core = new AnthropicAgentCore({
+        client: new Anthropic({ apiKey }),
+        // 10 tokens is far too small to complete any response — forces max_tokens stop reason
+        invoke: { model: 'claude-haiku-4-5', max_tokens: 10 },
+      });
+
+      const result = await core.stream({
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'Write a 500-word essay about the history of computing.' }],
+          },
+        ],
+        tools: [],
+        outputSchema: null,
+        budget: new AgentBudgetTracker({ iterations: 5, tokens: { input: 10_000, output: 10_000 } }),
+      });
+
+      expect(result.stopReason).toBe('budget_exhausted');
+      if (result.stopReason !== 'budget_exhausted') return;
+      expect(result.error.message).toMatch(/max_tokens/i);
+      expect(result.messages.length).toBeGreaterThan(0);
+    });
+
+    it('returns budget_exhausted immediately when the tracker iteration limit is already spent', async () => {
+      const result = await makeCore().stream({
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: 'Say hello.' }] },
+        ],
+        tools: [],
+        outputSchema: null,
+        // 0 iterations → shouldContinue() is false before the first API call
+        budget: new AgentBudgetTracker({ iterations: 0, tokens: { input: 10_000, output: 10_000 } }),
+      });
+
+      expect(result.stopReason).toBe('budget_exhausted');
+      if (result.stopReason !== 'budget_exhausted') return;
+      expect(result.error).toBeDefined();
+    });
   });
 
   it('records token usage in the budget after a call', async () => {

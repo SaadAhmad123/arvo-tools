@@ -59,37 +59,55 @@ describe('AgentBudgetTracker', () => {
       expect(tracker.shouldContinue()).toBe(false);
     });
 
-    // ── Partial limits ───────────────────────────────────────────────────────
+    // ── Default value merging ─────────────────────────────────────────────────
 
-    it('iterations-only: ignores token counts entirely', () => {
-      const tracker = new AgentBudgetTracker({ iterations: 2 });
-      tracker.record({ iterations: 1, tokens: { input: 999_999, output: 999_999 } });
+    it('no-arg constructor applies all defaults (10 iterations, 10 000 tokens each)', () => {
+      const tracker = new AgentBudgetTracker();
       expect(tracker.shouldContinue()).toBe(true);
-      tracker.record({ iterations: 1, tokens: { input: 0, output: 0 } });
+      tracker.record({ iterations: 10, tokens: { input: 1, output: 1 } });
       expect(tracker.shouldContinue()).toBe(false);
     });
 
-    it('output-tokens-only: ignores iterations and input tokens', () => {
-      const tracker = new AgentBudgetTracker({ tokens: { output: 100 } });
-      tracker.record({ iterations: 999, tokens: { input: 999_999, output: 99 } });
+    it('omitting iterations falls back to the default (10)', () => {
+      const tracker = new AgentBudgetTracker({ tokens: { input: 1000, output: 1000 } });
+      tracker.record({ iterations: 9, tokens: { input: 1, output: 1 } });
       expect(tracker.shouldContinue()).toBe(true);
-      tracker.record({ iterations: 1, tokens: { input: 0, output: 1 } });
+      tracker.record({ iterations: 1, tokens: { input: 1, output: 1 } });
       expect(tracker.shouldContinue()).toBe(false);
     });
 
-    it('input-tokens-only: ignores iterations and output tokens', () => {
-      const tracker = new AgentBudgetTracker({ tokens: { input: 50 } });
-      tracker.record({ iterations: 999, tokens: { input: 49, output: 999_999 } });
+    it('omitting tokens falls back to defaults (10 000 input and output)', () => {
+      const tracker = new AgentBudgetTracker({ iterations: 5 });
+      tracker.record({ iterations: 1, tokens: { input: 9999, output: 9999 } });
       expect(tracker.shouldContinue()).toBe(true);
-      tracker.record({ iterations: 1, tokens: { input: 1, output: 0 } });
+      tracker.record({ iterations: 1, tokens: { input: 1, output: 1 } });
       expect(tracker.shouldContinue()).toBe(false);
     });
 
-    it('iterations + output-only tokens: ignores input tokens', () => {
+    it('omitting tokens.input falls back to the default (10 000)', () => {
       const tracker = new AgentBudgetTracker({ iterations: 5, tokens: { output: 200 } });
-      tracker.record({ iterations: 4, tokens: { input: 999_999, output: 199 } });
+      tracker.record({ iterations: 1, tokens: { input: 9999, output: 100 } });
       expect(tracker.shouldContinue()).toBe(true);
-      tracker.record({ iterations: 1, tokens: { input: 0, output: 1 } });
+      tracker.record({ iterations: 1, tokens: { input: 1, output: 100 } });
+      expect(tracker.shouldContinue()).toBe(false);
+    });
+
+    it('omitting tokens.output falls back to the default (10 000)', () => {
+      const tracker = new AgentBudgetTracker({ iterations: 5, tokens: { input: 200 } });
+      tracker.record({ iterations: 1, tokens: { input: 100, output: 9999 } });
+      expect(tracker.shouldContinue()).toBe(true);
+      tracker.record({ iterations: 1, tokens: { input: 100, output: 1 } });
+      expect(tracker.shouldContinue()).toBe(false);
+    });
+
+    it('custom _default overrides the built-in defaults', () => {
+      const tracker = new AgentBudgetTracker(
+        {},
+        { iterations: 3, tokens: { input: 50, output: 50 } },
+      );
+      tracker.record({ iterations: 2, tokens: { input: 49, output: 49 } });
+      expect(tracker.shouldContinue()).toBe(true);
+      tracker.record({ iterations: 1, tokens: { input: 1, output: 1 } });
       expect(tracker.shouldContinue()).toBe(false);
     });
   });
@@ -144,19 +162,24 @@ describe('AgentBudgetTracker', () => {
       expect(resumed.shouldContinue()).toBe(false);
     });
 
-    it('round-trips an iterations-only tracker', () => {
+    it('round-trips a tracker with partial overrides — default-filled limits are preserved', () => {
       const tracker = new AgentBudgetTracker({ iterations: 3 });
       tracker.record({ iterations: 1, tokens: { input: 10, output: 10 } });
 
-      const resumed = AgentBudgetTracker.fromState(tracker.exportState());
+      const state = tracker.exportState();
+      expect(state.limits.iterations).toBe(3);
+      expect(state.limits.tokens.input).toBe(10000);
+      expect(state.limits.tokens.output).toBe(10000);
+
+      const resumed = AgentBudgetTracker.fromState(state);
       expect(resumed.shouldContinue()).toBe(true);
       resumed.record({ iterations: 2, tokens: { input: 0, output: 0 } });
       expect(resumed.shouldContinue()).toBe(false);
     });
 
-    it('round-trips an output-tokens-only tracker', () => {
+    it('round-trips a tracker with output token override', () => {
       const tracker = new AgentBudgetTracker({ tokens: { output: 100 } });
-      tracker.record({ iterations: 5, tokens: { input: 999, output: 60 } });
+      tracker.record({ iterations: 1, tokens: { input: 1, output: 60 } });
 
       const resumed = AgentBudgetTracker.fromState(tracker.exportState());
       expect(resumed.shouldContinue()).toBe(true);
@@ -164,12 +187,14 @@ describe('AgentBudgetTracker', () => {
       expect(resumed.shouldContinue()).toBe(false);
     });
 
-    it('round-trips a tokens-only tracker with both input and output', () => {
+    it('round-trips a tracker with explicit input and output token overrides', () => {
       const tracker = new AgentBudgetTracker({ tokens: { input: 200, output: 100 } });
-      tracker.record({ iterations: 99, tokens: { input: 150, output: 50 } });
+      tracker.record({ iterations: 1, tokens: { input: 150, output: 50 } });
 
       const state = tracker.exportState();
-      expect(state.limits.iterations).toBeUndefined();
+      expect(state.limits.iterations).toBe(10);
+      expect(state.limits.tokens.input).toBe(200);
+      expect(state.limits.tokens.output).toBe(100);
 
       const resumed = AgentBudgetTracker.fromState(state);
       expect(resumed.shouldContinue()).toBe(true);

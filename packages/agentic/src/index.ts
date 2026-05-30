@@ -13,10 +13,16 @@ export type {
 } from './AgentCore/interface';
 export { OpenAIAgentCore, type OpenAIAgentCoreParam } from './AgentCore/openai';
 export { type IStringEncoder, ToolNameEncoder } from './ToolNameEncoder';
+export {
+  ArvoHandlerTool,
+  type ArvoHandlerToolParam,
+  ArvoHandlerToolResult,
+} from './Tools/ArvoHandlerTool';
 export { FunctionTool, type FunctionToolParam } from './Tools/Function';
 export { ErrorResultData, JsonResultData, MediaResultData } from './Tools/helpers';
 export type {
   IErrorResultData,
+  IExternalToolResult,
   IJsonResultData,
   IMediaResultData,
   ITool,

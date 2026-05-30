@@ -11,6 +11,7 @@ import { setSpanError } from '../helpers';
 import { ErrorResultData } from '../Tools/helpers';
 import type {
   IErrorResultData,
+  IExternalToolResult,
   IJsonResultData,
   IMediaResultData,
   ITool,
@@ -140,7 +141,11 @@ export class Toolset<T extends Record<string, ITool>> {
   async execute(
     dispatches: IToolDispatch[],
     options?: ExecutionMetadataType,
-  ): Promise<Array<IJsonResultData | IMediaResultData | IErrorResultData | IToolNotExist>> {
+  ): Promise<
+    Array<
+      IJsonResultData | IMediaResultData | IErrorResultData | IExternalToolResult | IToolNotExist
+    >
+  > {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: `Toolset.execute`,
       disableSpanManagement: true,
@@ -160,7 +165,13 @@ export class Toolset<T extends Record<string, ITool>> {
         try {
           const otelHeaders = getOtelHeaderFromSpan(span);
           const promises: Promise<
-            Array<IJsonResultData | IMediaResultData | IErrorResultData | IToolNotExist>
+            Array<
+              | IJsonResultData
+              | IMediaResultData
+              | IErrorResultData
+              | IToolNotExist
+              | IExternalToolResult
+            >
           >[] = [];
 
           for (const dispatch of dispatches) {
