@@ -63,5 +63,7 @@ export interface ITool {
   execute(
     dispatches: IToolDispatch[],
     options?: ExecutionMetadataType,
-  ): PromiseAble<Array<IJsonResultData | IMediaResultData | IErrorResultData | IExternalToolResult>>;
+  ): PromiseAble<
+    Array<IJsonResultData | IMediaResultData | IErrorResultData | IExternalToolResult>
+  >;
 }

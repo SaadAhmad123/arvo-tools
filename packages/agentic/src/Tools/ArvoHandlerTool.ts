@@ -66,8 +66,7 @@ export class ArvoHandlerTool<
     return {
       [this.name]: {
         name: this.name,
-        description:
-          this.contract.description ?? `Arvo handler for contract type '${this.name}'`,
+        description: this.contract.description ?? `Arvo handler for contract type '${this.name}'`,
         inputSchema,
       },
     };
@@ -133,9 +132,7 @@ export class ArvoHandlerTool<
           ).flat();
 
           span.setAttributes({
-            [OUTPUT_VALUE]: JSON.stringify(
-              results.map((r) => ({ type: r.type, data: r.body() })),
-            ),
+            [OUTPUT_VALUE]: JSON.stringify(results.map((r) => ({ type: r.type, data: r.body() }))),
             [OUTPUT_MIME_TYPE]: MimeType.JSON,
           });
 

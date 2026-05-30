@@ -476,12 +476,17 @@ describe.skipIf(!apiKey)('AnthropicAgentCore — integration', () => {
         messages: [
           {
             role: 'user',
-            content: [{ type: 'text', text: 'Write a 500-word essay about the history of computing.' }],
+            content: [
+              { type: 'text', text: 'Write a 500-word essay about the history of computing.' },
+            ],
           },
         ],
         tools: [],
         outputSchema: null,
-        budget: new AgentBudgetTracker({ iterations: 5, tokens: { input: 10_000, output: 10_000 } }),
+        budget: new AgentBudgetTracker({
+          iterations: 5,
+          tokens: { input: 10_000, output: 10_000 },
+        }),
       });
 
       expect(result.stopReason).toBe('budget_exhausted');
@@ -492,13 +497,14 @@ describe.skipIf(!apiKey)('AnthropicAgentCore — integration', () => {
 
     it('returns budget_exhausted immediately when the tracker iteration limit is already spent', async () => {
       const result = await makeCore().stream({
-        messages: [
-          { role: 'user', content: [{ type: 'text', text: 'Say hello.' }] },
-        ],
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'Say hello.' }] }],
         tools: [],
         outputSchema: null,
         // 0 iterations → shouldContinue() is false before the first API call
-        budget: new AgentBudgetTracker({ iterations: 0, tokens: { input: 10_000, output: 10_000 } }),
+        budget: new AgentBudgetTracker({
+          iterations: 0,
+          tokens: { input: 10_000, output: 10_000 },
+        }),
       });
 
       expect(result.stopReason).toBe('budget_exhausted');
