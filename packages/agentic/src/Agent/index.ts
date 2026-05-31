@@ -296,7 +296,7 @@ export class Agent {
     return result.data;
   }
 
-  private buildSystem() {
+  private buildSystemPrompt() {
     if (!this.system) return null;
     if (typeof this.system === 'string') {
       return this.system;
@@ -322,7 +322,7 @@ export class Agent {
     options: AgentStreamParam['options'] & ExecutionMetadataType,
   ): Promise<AgentState> {
     const budgetState = new AgentBudgetTracker(this.budgetLimits).exportState();
-    const freshState = createFreshState(messages, budgetState, this.buildSystem());
+    const freshState = createFreshState(messages, budgetState, this.buildSystemPrompt());
     return this.runLoop(freshState, options);
   }
 
