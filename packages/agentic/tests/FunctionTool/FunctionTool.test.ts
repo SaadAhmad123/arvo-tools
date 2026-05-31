@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { FunctionTool, type MediaResultData } from '../../src';
 import { addTool, failingTool, greetTool, imageTool } from './tools';
 
@@ -33,7 +34,6 @@ describe('FunctionTool', () => {
     });
 
     it('returns void result as empty array', async () => {
-      const { z } = await import('zod');
       const voidTool = new FunctionTool({
         name: 'noop',
         description: 'Does nothing',

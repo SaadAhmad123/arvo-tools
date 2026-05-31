@@ -28,9 +28,16 @@ import type {
 } from './interface';
 
 export type FunctionToolParam<T extends z.ZodTypeAny> = {
+  /** Unique capability name used for dispatch routing. */
   name: string;
+  /** Human-readable description shown to the LLM. */
   description: string;
+  /** Zod schema that validates and types the LLM's input arguments. */
   input: T;
+  /**
+   * The function invoked when the LLM calls this tool.
+   * Return `void` or omit the return to produce no output.
+   */
   fn: (param: {
     id: string;
     name: string;
@@ -39,6 +46,16 @@ export type FunctionToolParam<T extends z.ZodTypeAny> = {
   }) => PromiseAble<Array<MediaResultData | JsonResultData> | void>;
 };
 
+/**
+ * An {@link ITool} implementation that wraps a plain TypeScript function.
+ *
+ * The LLM's arguments are validated against the provided Zod schema before the
+ * function is called. Input errors are surfaced as {@link IErrorResultData} rather
+ * than thrown, keeping the agent loop intact.
+ *
+ * `FunctionTool` never produces external calls, so {@link onExternalResponse}
+ * is a no-op returning `[]`.
+ */
 export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements ITool {
   public readonly type = 'FunctionTool';
   public readonly name: FunctionToolParam<T>['description'];
@@ -53,13 +70,21 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
     this.fn = fn;
   }
 
+  /** No-op — `FunctionTool` holds no external resources. */
   init() {}
+
+  /** No-op — `FunctionTool` holds no external resources. */
   close() {}
 
+  /**
+   * Returns `true` if `toolName` matches this tool's capability name.
+   * @param toolName - Capability name to check.
+   */
   has(toolName: string): boolean {
     return toolName === this.name;
   }
 
+  /** Returns the single capability this tool exposes, keyed by name. */
   metadata(): Record<string, IToolMetaData> | null {
     return {
       [this.name]: {
@@ -118,6 +143,11 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
     });
   }
 
+  /**
+   * Validates each dispatch against the input schema and invokes the wrapped function.
+   * All dispatches are executed in parallel. Input or function errors are caught and
+   * returned as {@link IErrorResultData} rather than thrown.
+   */
   async execute(
     dispatches: IToolDispatch[],
     options?: ExecutionMetadataType,
@@ -167,5 +197,13 @@ export class FunctionTool<T extends z.ZodTypeAny = z.ZodTypeAny> implements IToo
         }
       },
     });
+  }
+
+  /**
+   * No-op — `FunctionTool` never produces external calls.
+   * @returns An empty array.
+   */
+  onExternalResponse(): Array<IJsonResultData | IMediaResultData | IErrorResultData> {
+    return [];
   }
 }

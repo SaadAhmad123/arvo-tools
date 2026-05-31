@@ -20,6 +20,7 @@ import { ErrorResultData, JsonResultData } from '../helpers';
 import type {
   IErrorResultData,
   IJsonResultData,
+  IMediaResultData,
   ITool,
   IToolDispatch,
   IToolMetaData,
@@ -27,7 +28,9 @@ import type {
 import { findSkillFiles } from './helpers';
 
 export type SkillParam = {
+  /** Unique name identifying this skill collection within a {@link Toolset}. */
   name: string;
+  /** Absolute path to the directory that contains the skill markdown files. */
   directory: string;
 };
 
@@ -36,6 +39,17 @@ type SkillEntry = {
   metadata: IToolMetaData;
 };
 
+/**
+ * An {@link ITool} implementation that exposes a directory of markdown files as
+ * individual LLM-callable skills.
+ *
+ * Each markdown file must have a YAML front-matter block with `name` and
+ * `description` fields. When the LLM invokes a skill, the file's body is returned
+ * as structured instructions alongside the original arguments.
+ *
+ * `Skill` never produces external calls, so {@link onExternalResponse} is a
+ * no-op returning `[]`.
+ */
 export class Skill implements ITool {
   public readonly type = 'Skill';
   public readonly name: string;
@@ -47,6 +61,16 @@ export class Skill implements ITool {
     this.directory = param.directory;
   }
 
+  /**
+   * Scans {@link SkillParam.directory} recursively for markdown files, parses their
+   * front-matter, and builds the internal skill index. Files missing `name` or
+   * `description` in their front-matter are silently skipped.
+   *
+   * Must be called before {@link metadata} or {@link execute}.
+   *
+   * @throws If the directory scan or any file read fails, the error is re-thrown
+   *   after recording it on the active OTel span.
+   */
   async init(options?: ExecutionMetadataType): Promise<void> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: `Skill<${this.name}>.init`,
@@ -89,6 +113,7 @@ export class Skill implements ITool {
     });
   }
 
+  /** Clears the skill index. No external connections to close. */
   async close(options?: ExecutionMetadataType): Promise<void> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: `Skill<${this.name}>.close`,
@@ -109,10 +134,18 @@ export class Skill implements ITool {
     });
   }
 
+  /**
+   * Returns `true` if a skill with the given name was found during {@link init}.
+   * Always returns `false` before {@link init} or after {@link close}.
+   */
   has(skillName: string): boolean {
     return skillName in this.skillIndex;
   }
 
+  /**
+   * Returns metadata for every skill in the index, keyed by skill name.
+   * Returns an empty object before {@link init} or after {@link close}.
+   */
   metadata(): Record<string, IToolMetaData> {
     const result: Record<string, IToolMetaData> = {};
     for (const [name, entry] of Object.entries(this.skillIndex)) {
@@ -158,6 +191,14 @@ export class Skill implements ITool {
     });
   }
 
+  /**
+   * Reads each dispatched skill file and returns its body as structured instructions.
+   * All dispatches are executed in parallel. Missing skills or read errors are caught
+   * per-dispatch and returned as {@link IErrorResultData}.
+   *
+   * Each successful result is a {@link IJsonResultData} with shape
+   * `{ skill, instructions, args }`.
+   */
   async execute(
     dispatches: IToolDispatch[],
     options?: ExecutionMetadataType,
@@ -197,5 +238,13 @@ export class Skill implements ITool {
         }
       },
     });
+  }
+
+  /**
+   * No-op — `Skill` never produces external calls.
+   * @returns An empty array.
+   */
+  onExternalResponse(): Array<IJsonResultData | IMediaResultData | IErrorResultData> {
+    return [];
   }
 }

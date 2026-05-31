@@ -29,29 +29,50 @@ import type {
 } from './interface';
 
 export type MCPClientParam = {
+  /** Unique name identifying this client instance within a {@link Toolset}. */
   name: string;
+  /** Optional overrides for the MCP client identity sent during the server handshake. */
   clientConfig?: {
+    /** Client name sent to the MCP server. Defaults to `'arvo-tools-agentic-mcp-tool'`. */
     name?: string;
+    /** Client version sent to the MCP server. Defaults to `'1.0.0'`. */
     version?: string;
   };
 } & (
   | {
       transport: {
         type: 'http';
+        /** Full URL of the MCP HTTP endpoint. URLs containing `/mcp` use Streamable HTTP; all others use SSE. */
         url: string;
+        /** Optional `fetch` init options forwarded to every HTTP request. */
         requestInit?: RequestInit;
       };
     }
   | {
       transport: {
         type: 'stdio';
+        /** Executable to spawn as the MCP server process. */
         command: string;
+        /** Arguments passed to the spawned process. */
         args?: string[];
+        /** Environment variables set on the spawned process. */
         env?: Record<string, string>;
       };
     }
 );
 
+/**
+ * An {@link ITool} implementation that connects to an external MCP server and
+ * proxies its tools into the agent's toolset.
+ *
+ * Supports two transports:
+ * - **HTTP** — connects via Streamable HTTP (URLs containing `/mcp`) or SSE.
+ * - **stdio** — spawns a local process and communicates over stdin/stdout.
+ *
+ * Tool metadata is fetched from the server during {@link init} and cached for
+ * the lifetime of the connection. `MCPClient` never produces external calls,
+ * so {@link onExternalResponse} is a no-op returning `[]`.
+ */
 export class MCPClient implements ITool {
   public readonly type = 'MCPClient';
   public readonly name: string;
@@ -87,6 +108,13 @@ export class MCPClient implements ITool {
     return new SSEClientTransport(url, { requestInit: transport.requestInit });
   }
 
+  /**
+   * Connects to the MCP server, performs the protocol handshake, and caches
+   * the server's tool list. Must be called before {@link metadata} or {@link execute}.
+   *
+   * @throws If the connection or tool-list fetch fails, the error is re-thrown
+   *   after recording it on the active OTel span.
+   */
   async init(options?: ExecutionMetadataType): Promise<void> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: `MCPClient<${this.name}>.init`,
@@ -123,6 +151,10 @@ export class MCPClient implements ITool {
     });
   }
 
+  /**
+   * Disconnects from the MCP server and clears the cached metadata.
+   * Errors are recorded on the OTel span but do not re-throw.
+   */
   async close(options?: ExecutionMetadataType): Promise<void> {
     return await ArvoOpenTelemetry.getInstance().startActiveSpan({
       name: `MCPClient<${this.name}>.close`,
@@ -152,10 +184,18 @@ export class MCPClient implements ITool {
     });
   }
 
+  /**
+   * Returns `true` if the given tool name was advertised by the MCP server.
+   * Always returns `false` before {@link init} or after {@link close}.
+   */
   has(toolName: string): boolean {
     return toolName in this.cachedMetadata;
   }
 
+  /**
+   * Returns a shallow copy of the cached tool metadata fetched during {@link init}.
+   * Returns an empty object before {@link init} or after {@link close}.
+   */
   metadata(): Record<string, IToolMetaData> {
     return { ...this.cachedMetadata };
   }
@@ -228,6 +268,13 @@ export class MCPClient implements ITool {
     });
   }
 
+  /**
+   * Forwards each dispatch to the MCP server and returns a typed result.
+   * All dispatches are executed in parallel. MCP errors and thrown exceptions
+   * are caught per-dispatch and returned as {@link IErrorResultData}.
+   * Image and audio content items are mapped to {@link IMediaResultData};
+   * all other content items are mapped to {@link IJsonResultData}.
+   */
   async execute(
     dispatches: IToolDispatch[],
     options?: ExecutionMetadataType,
@@ -274,5 +321,13 @@ export class MCPClient implements ITool {
         }
       },
     });
+  }
+
+  /**
+   * No-op — `MCPClient` never produces external calls.
+   * @returns An empty array.
+   */
+  onExternalResponse(): Array<IJsonResultData | IMediaResultData | IErrorResultData> {
+    return [];
   }
 }

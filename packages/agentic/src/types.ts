@@ -1,4 +1,13 @@
 import type { OpenTelemetryHeaders } from 'arvo-core';
+import type z from 'zod';
+import type {
+  AnyContentTypeSchema,
+  ApplicationContentTypeSchema,
+  AudioContentTypeSchema,
+  ImageContentTypeSchema,
+  TextContentTypeSchema,
+  VideoContentTypeSchema,
+} from './schema';
 
 export type PromiseAble<T> = Promise<T> | T;
 export type NestedPartial<T> = {
@@ -8,21 +17,12 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonAble = Record<string, JsonValue>;
 
-export type ImageContentType =
-  `image/${'jpeg' | 'png' | 'gif' | 'webp' | 'svg+xml' | 'bmp' | 'tiff'}`;
-export type AudioContentType = `audio/${'mpeg' | 'mp4' | 'wav' | 'ogg' | 'webm' | 'flac'}`;
-export type VideoContentType = `video/${'mp4' | 'webm' | 'ogg' | 'quicktime' | 'x-msvideo'}`;
-export type ApplicationContentType =
-  `application/${'pdf' | 'json' | 'xml' | 'octet-stream' | 'zip' | 'gzip'}`;
-export type TextContentType =
-  `text/${'plain' | 'html' | 'css' | 'javascript' | 'csv' | 'xml' | 'markdown'}`;
-
-export type AnyContentType =
-  | ImageContentType
-  | AudioContentType
-  | VideoContentType
-  | ApplicationContentType
-  | TextContentType;
+export type ImageContentType = z.infer<typeof ImageContentTypeSchema>;
+export type AudioContentType = z.infer<typeof AudioContentTypeSchema>;
+export type VideoContentType = z.infer<typeof VideoContentTypeSchema>;
+export type ApplicationContentType = z.infer<typeof ApplicationContentTypeSchema>;
+export type TextContentType = z.infer<typeof TextContentTypeSchema>;
+export type AnyContentType = z.infer<typeof AnyContentTypeSchema>;
 
 export type ExecutionMetadataType = {
   otelHeaders: OpenTelemetryHeaders;

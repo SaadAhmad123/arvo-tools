@@ -1,46 +1,25 @@
-import type { AnyContentType, JsonAble } from './types';
+import type { z } from 'zod';
+import type {
+  JsonMessageContentSchema,
+  MediaMessageContentSchema,
+  MessageContentSchema,
+  MessageSchema,
+  TextMessageContentSchema,
+  ToolCallMessageContentSchema,
+  ToolResultMessageContentSchema,
+} from './message.schema';
+import type { JsonAble } from './types';
 
-export type TextMessageContent = {
-  type: 'text';
-  text: string;
-};
+export type TextMessageContent = z.infer<typeof TextMessageContentSchema>;
+export type MediaMessageContent = z.infer<typeof MediaMessageContentSchema>;
+export type ToolCallMessageContent = z.infer<typeof ToolCallMessageContentSchema>;
+export type ToolResultMessageContent = z.infer<typeof ToolResultMessageContentSchema>;
 
-export type MediaMessageContent = {
-  type: 'media';
-  contentType: AnyContentType;
-  source: 'base64';
-  data: string;
-};
-
-export type ToolCallMessageContent = {
-  type: 'tool_call';
-  id: string;
-  name: string;
-  args: Record<string, unknown>;
-};
-
-export type ToolResultMessageContent = {
-  type: 'tool_result';
-  id: string;
-  isError: boolean;
-  content: Array<TextMessageContent | MediaMessageContent>;
-};
-
-export type JsonMessageContent = {
-  type: 'json';
+/** `data` is inferred as `Record<string, any>` from the schema; cast to {@link JsonAble} at use sites. */
+export type JsonMessageContent = Omit<z.infer<typeof JsonMessageContentSchema>, 'data'> & {
   data: JsonAble;
 };
 
-export type MessageContent =
-  | TextMessageContent
-  | MediaMessageContent
-  | ToolCallMessageContent
-  | ToolResultMessageContent
-  | JsonMessageContent;
-
-export type MessageRole = 'user' | 'assistant' | 'system';
-
-export type Message = {
-  role: MessageRole;
-  content: MessageContent[];
-};
+export type MessageContent = z.infer<typeof MessageContentSchema>;
+export type MessageRole = z.infer<typeof MessageSchema>['role'];
+export type Message = z.infer<typeof MessageSchema>;

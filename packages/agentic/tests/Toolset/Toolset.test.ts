@@ -1,6 +1,106 @@
 import { describe, expect, it } from 'vitest';
-import { type ToolNotExist, Toolset } from '../../src/';
+import {
+  type IExternalToolResult,
+  type ITool,
+  MediaResultData,
+  type ToolNotExist,
+  Toolset,
+} from '../../src/';
 import { addTool, failingTool, greetTool, imageTool } from '../FunctionTool/tools';
+
+// ── Error-path mock tools ──────────────────────────────────────────────────
+
+const initThrowingTool: ITool = {
+  name: 'init-thrower',
+  init: () => {
+    throw new Error('init failed');
+  },
+  close: () => {},
+  has: (name) => name === 'init-thrower',
+  metadata: () => ({
+    'init-thrower': { name: 'init-thrower', description: 'throws on init', inputSchema: {} },
+  }),
+  execute: async () => [],
+  onExternalResponse: async () => [],
+};
+
+const closeThrowingTool: ITool = {
+  name: 'close-thrower',
+  init: () => {},
+  close: () => {
+    throw new Error('close failed');
+  },
+  has: (name) => name === 'close-thrower',
+  metadata: () => ({
+    'close-thrower': { name: 'close-thrower', description: 'throws on close', inputSchema: {} },
+  }),
+  execute: async () => [],
+  onExternalResponse: async () => [],
+};
+
+// execute() itself throws — distinct from a tool that returns ErrorResultData
+const executeThrowingTool: ITool = {
+  name: 'execute-thrower',
+  init: () => {},
+  close: () => {},
+  has: (name) => name === 'execute-thrower',
+  metadata: () => ({
+    'execute-thrower': {
+      name: 'execute-thrower',
+      description: 'throws on execute',
+      inputSchema: {},
+    },
+  }),
+  execute: async () => {
+    throw new Error('execute failed');
+  },
+  onExternalResponse: async () => [],
+};
+
+// onExternalResponse() returns a media result — exercises the media logging branch
+const mediaResponseTool: ITool = {
+  name: 'media-responder',
+  init: () => {},
+  close: () => {},
+  has: (name) => name === 'media-responder',
+  metadata: () => ({
+    'media-responder': {
+      name: 'media-responder',
+      description: 'returns media on response',
+      inputSchema: {},
+    },
+  }),
+  execute: async (dispatches) =>
+    dispatches.map((d) => ({ id: d.id, type: 'external_call' as const, body: () => ({}) })),
+  onExternalResponse: async (request) => [
+    new MediaResultData(request.id, {
+      name: 'output.png',
+      mediatype: 'image',
+      contenttype: 'image/png',
+      data: 'aGVsbG8=',
+    }),
+  ],
+};
+
+// onExternalResponse() itself throws — exercises the catch block
+const responseThrowingTool: ITool = {
+  name: 'response-thrower',
+  init: () => {},
+  close: () => {},
+  has: (name) => name === 'response-thrower',
+  metadata: () => ({
+    'response-thrower': {
+      name: 'response-thrower',
+      description: 'throws on response',
+      inputSchema: {},
+    },
+  }),
+  execute: async (dispatches) =>
+    dispatches.map((d) => ({ id: d.id, type: 'external_call' as const, body: () => ({}) })),
+  onExternalResponse: async () => {
+    throw new Error('response failed');
+  },
+};
 
 describe('Toolset', () => {
   describe('metadata()', () => {
@@ -155,6 +255,81 @@ describe('Toolset', () => {
       await toolset.init();
       const results = await toolset.execute([]);
       expect(results).toHaveLength(0);
+      await toolset.close();
+    });
+
+    it('returns error when the underlying tool execute() itself throws', async () => {
+      const toolset = new Toolset({ et: executeThrowingTool });
+      await toolset.init();
+      const results = await toolset.execute([{ id: '1', name: 'et>execute-thrower', args: {} }]);
+      expect(results[0]?.type).toBe('error');
+      await toolset.close();
+    });
+  });
+
+  describe('init()', () => {
+    it('rethrows when a registered tool init() throws', async () => {
+      const toolset = new Toolset({ it: initThrowingTool });
+      await expect(toolset.init()).rejects.toThrow('init failed');
+    });
+  });
+
+  describe('close()', () => {
+    it('does not rethrow when a registered tool close() throws', async () => {
+      const toolset = new Toolset({ ct: closeThrowingTool });
+      await toolset.init();
+      await toolset.close(); // must not throw
+    });
+  });
+
+  describe('onExternalResponse()', () => {
+    it('returns media result when the underlying tool returns media', async () => {
+      const toolset = new Toolset({ mr: mediaResponseTool });
+      await toolset.init();
+
+      const dispatch = { id: 'req-1', name: 'mr>media-responder', args: {} };
+      const execResults = await toolset.execute([dispatch]);
+      expect(execResults[0]?.type).toBe('external_call');
+
+      const results = await toolset.onExternalResponse(
+        dispatch,
+        execResults[0] as IExternalToolResult,
+        {},
+      );
+      expect(results[0]?.type).toBe('media');
+      await toolset.close();
+    });
+
+    it('returns error when the underlying tool onExternalResponse() throws', async () => {
+      const toolset = new Toolset({ rt: responseThrowingTool });
+      await toolset.init();
+
+      const dispatch = { id: 'req-1', name: 'rt>response-thrower', args: {} };
+      const execResults = await toolset.execute([dispatch]);
+
+      const results = await toolset.onExternalResponse(
+        dispatch,
+        execResults[0] as IExternalToolResult,
+        {},
+      );
+      expect(results[0]?.type).toBe('error');
+      await toolset.close();
+    });
+
+    it('returns tool_not_exist for an unknown compound key', async () => {
+      const toolset = new Toolset({ mr: mediaResponseTool });
+      await toolset.init();
+
+      const dispatch = { id: 'req-1', name: 'mr>media-responder', args: {} };
+      const execResults = await toolset.execute([dispatch]);
+
+      const unknownDispatch = { ...dispatch, name: 'mr>unknown' };
+      const results = await toolset.onExternalResponse(
+        unknownDispatch,
+        execResults[0] as IExternalToolResult,
+        {},
+      );
+      expect(results[0]?.type).toBe('tool_not_exist');
       await toolset.close();
     });
   });
