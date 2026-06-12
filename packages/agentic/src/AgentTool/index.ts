@@ -40,7 +40,12 @@ export const createAgentTool = <TInputSchema extends z.ZodTypeAny>(
     ...param,
     fn: async (
       input: z.infer<TInputSchema>,
-      config: { otelInfo: OtelInfoType; toolUseId: string },
+      config: {
+        otelInfo: OtelInfoType;
+        toolUseId: string;
+        subject: string;
+        parentSubject: string | null;
+      },
     ) =>
       await ArvoOpenTelemetry.getInstance().startActiveSpan({
         name: `AgentTool<${param.name}>.execute`,
@@ -69,6 +74,7 @@ export const createAgentTool = <TInputSchema extends z.ZodTypeAny>(
               );
             const result =
               (await param.fn(inputValidation.data, {
+                ...config,
                 otelInfo: {
                   span,
                   headers: getOtelHeaderFromSpan(span),

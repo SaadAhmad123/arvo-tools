@@ -53,8 +53,12 @@ export type AgentInternalTool<
    * The implementation logic.
    *
    * @param input - The validated arguments matching `TInputSchema`. You do not need to re-validate.
-   * @param config - Observability context (Span/Headers) to link any internal logging or network calls,
-   *                 plus the `toolUseId` for correlation.
+   * @param config - Runtime context provided by the agent loop:
+   *   - `otelInfo` — Observability context (Span/Headers) to link any internal logging or network calls.
+   *   - `toolUseId` — Correlation ID matching this invocation to the LLM's tool-call request.
+   *   - `subject` — The Arvo orchestration subject of the currently executing agent instance.
+   *   - `parentSubject` — The Arvo orchestration subject of the parent orchestrator that invoked
+   *     this agent; `null` when this agent is the root of the orchestration tree.
    * @returns One of three forms:
    *   - `{ messages }` — Provide full control over the tool result message(s) sent back to the LLM.
    *     Can be a single user message or a tuple starting with a user message followed by additional agent messages.
@@ -64,7 +68,12 @@ export type AgentInternalTool<
    */
   fn: (
     input: z.infer<TInputSchema>,
-    config: { otelInfo: OtelInfoType; toolUseId: string },
+    config: {
+      otelInfo: OtelInfoType;
+      toolUseId: string;
+      subject: string;
+      parentSubject: string | null;
+    },
   ) => PromiseAble<
     | {
         messages:
