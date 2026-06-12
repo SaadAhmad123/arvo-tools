@@ -53,9 +53,17 @@ import { prioritizeToolCalls } from './utils';
  * **Self-Correction:**
  * If the LLM's final output fails the Contract's Output Schema validation (via `outputBuilder`),
  * the loop catches the error and feeds it back to the LLM for auto-correction.
+ *
+ * @param param.currentSubject - The Arvo orchestration subject of the currently executing agent instance.
+ *   Passed through to every internal tool invocation so tools can identify which agent is calling them.
+ * @param param.parentSubject - The Arvo orchestration subject of the parent orchestrator that invoked
+ *   this agent. `null` when this agent is the root of the orchestration tree. Also forwarded to
+ *   every internal tool invocation.
  */
 export const agentLoop = async (
   param: {
+    currentSubject: string;
+    parentSubject: string | null;
     initLifecycle: AgentLLMIntegrationParam['lifecycle'];
     system: string | null;
     messages: AgentMessage[];
@@ -482,6 +490,8 @@ export const agentLoop = async (
                         (await serverConfig.contract.fn(item.input, {
                           otelInfo,
                           toolUseId: item.toolUseId,
+                          subject: param.currentSubject,
+                          parentSubject: param.parentSubject,
                         })) ?? null;
 
                       if (response && 'messages' in response) {

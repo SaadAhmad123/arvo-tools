@@ -210,6 +210,7 @@ export const createArvoAgent = <
           const agentEventStreamer: AgentEventStreamer = (event) => {
             try {
               const currentSubject = context?.currentSubject ?? input?.subject ?? null;
+              const parentSubject = context?.parentSubject ?? input?.data?.parentSubject$$ ?? null;
               const parsedSubject = currentSubject
                 ? ArvoOrchestrationSubject.parse(currentSubject)
                 : null;
@@ -220,6 +221,7 @@ export const createArvoAgent = <
                   time: createTimestamp(),
                 },
                 {
+                  parentSubject,
                   initiatorId: parsedSubject?.execution.initiator ?? 'unknown',
                   subject: currentSubject ?? 'unknown',
                   selfId: contracts.self.type,
@@ -290,6 +292,8 @@ export const createArvoAgent = <
                 })) ?? null;
               const response = await agentLoop(
                 {
+                  currentSubject: context?.currentSubject ?? input?.subject ?? 'unknown',
+                  parentSubject: context?.parentSubject ?? input?.data?.parentSubject$$ ?? null,
                   permissionManagerContext,
                   initLifecycle: 'init',
                   system: llmContext?.system ?? null,
@@ -329,6 +333,7 @@ export const createArvoAgent = <
 
               const resumableContextToPersist: AgentState = {
                 initEventAccessControl: input.accesscontrol ?? null,
+                parentSubject: input.data.parentSubject$$ || null,
                 currentSubject: input.subject,
                 enabledTools: llmContext?.enabledTools ?? {},
                 system: llmContext?.system ?? null,
@@ -456,7 +461,8 @@ export const createArvoAgent = <
 
             const response = await agentLoop(
               {
-                permissionManagerContext,
+                currentSubject: context?.currentSubject ?? 'unknown',
+                parentSubject: context?.parentSubject ?? null,
                 initLifecycle: 'tool_result',
                 system: resumedContext.system ?? null,
                 messages: messages,
@@ -477,6 +483,7 @@ export const createArvoAgent = <
                 currentTotalUsageTokens: resumedContext.totalTokenUsage,
                 permissionManager: permissionManager ?? null,
                 permissionPolicy,
+                permissionManagerContext,
               },
               { otelInfo },
             );

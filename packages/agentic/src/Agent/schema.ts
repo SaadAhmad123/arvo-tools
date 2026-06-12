@@ -56,10 +56,28 @@ export const AgentMessageSchema = z.object({
   seenCount: z.number().describe('Then number of time the LLM integration has seen this message'),
 });
 
-/** The agent resumable state schema */
+/**
+ * The agent resumable state schema.
+ *
+ * @remarks
+ * This state is persisted when the agent suspends (e.g. waiting on an Arvo service tool call)
+ * and restored when execution resumes with the tool result. It carries everything needed to
+ * reconstruct the full execution context across suspension boundaries.
+ */
 export const AgentStateSchema = z.object({
   initEventAccessControl: z.string().nullable(),
-  currentSubject: z.string(),
+  /**
+   * The Arvo orchestration subject of the currently executing agent instance.
+   * Optional for backward compatibility with state persisted before this field was introduced.
+   */
+  currentSubject: z.string().optional(),
+  /**
+   * The Arvo orchestration subject of the parent orchestrator that invoked this agent.
+   * Sourced from `parentSubject$$` in the initiating event's data payload.
+   * `null` when this agent is the root of the orchestration tree.
+   * Optional for backward compatibility with state persisted before this field was introduced.
+   */
+  parentSubject: z.string().nullable().optional(),
   system: z.string().nullable(),
   messages: AgentMessageSchema.array(),
   agentCycles: z.object({
