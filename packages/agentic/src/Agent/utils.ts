@@ -1,6 +1,7 @@
 import { SemanticConventions as OpenInferenceSemanticConventions } from '@arizeai/openinference-semantic-conventions';
 import type { Span } from '@opentelemetry/api';
 import type { ArvoSemanticVersion, VersionedArvoContract } from 'arvo-core';
+import { jsonrepair } from 'jsonrepair';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { AgentInternalTool } from '../AgentTool/types';
 import type { AgentLLMIntegrationOutput } from '../Integrations/types';
@@ -300,10 +301,20 @@ export const setOpenInferenceResponseOutputAttr = (
   });
 };
 
-/** Safe wrapper around JSON.parse that returns null instead of throwing. */
+/**
+ * Tolerant JSON parser designed for LLM output.
+ *
+ * Tries native `JSON.parse` first. If that fails, falls back to `jsonrepair`
+ * which handles the three common LLM failure modes:
+ * - JSON wrapped in markdown code fences (` ```json ``` `)
+ * - Prose mixed with JSON in the same response
+ * - Malformed JSON (trailing commas, unquoted keys, missing brackets, etc.)
+ *
+ * Returns `null` if the string cannot be recovered into a valid JSON object.
+ */
 export const tryParseJson = (str: string): Record<string, unknown> | null => {
   try {
-    return JSON.parse(str);
+    return JSON.parse(jsonrepair(str));
   } catch {
     return null;
   }

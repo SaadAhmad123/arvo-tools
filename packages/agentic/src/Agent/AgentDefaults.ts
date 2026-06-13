@@ -212,7 +212,14 @@ export const AgentDefaults = {
    */
   OUTPUT_BUILDER: ((param) => {
     if (param.type === 'json') {
-      const { error, data } = param.outputFormat.safeParse(param.parsedContent ?? {});
+      if (param.parsedContent === null) {
+        return {
+          error: new Error(
+            'Your response could not be parsed as JSON. Return a raw JSON object only — no markdown code fences, no surrounding text.',
+          ),
+        };
+      }
+      const { error, data } = param.outputFormat.safeParse(param.parsedContent);
       return error ? { error } : { data };
     }
     if (param.type === 'text') {
