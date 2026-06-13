@@ -1,4 +1,5 @@
 import type { ArvoSemanticVersion } from 'arvo-core';
+import { jsonrepair } from 'jsonrepair';
 import { v4 } from 'uuid';
 import z from 'zod';
 import type { AgentInternalTool } from '../AgentTool/types.js';
@@ -201,25 +202,42 @@ export const AgentDefaults = {
   /**
    * Default output builder validating agent responses against contract schemas.
    *
-   * Handles both text and JSON output modes. For text mode, wraps the LLM's
-   * response in the default complete schema structure. For JSON mode, validates
-   * parsed content against the output format schema.
+   * Handles both text and JSON output modes:
+   * - **Text mode:** wraps the LLM's raw response string in the default complete schema structure.
+   * - **JSON mode:** attempts to recover a valid JSON object from the LLM's output using a
+   *   two-stage strategy:
+   *   1. Use `parsedContent` if the LLM integration already parsed it successfully.
+   *   2. If `parsedContent` is null (parse failed), run `jsonrepair` on the raw `content` to
+   *      recover from common LLM output issues: markdown code fences, prose mixed with JSON,
+   *      and structurally malformed JSON. Non-object results (arrays, primitives) are rejected.
+   *   3. If recovery fails, return a natural language error that feeds into the self-correction
+   *      loop so the LLM can retry with explicit formatting instructions.
    *
    * @remarks
-   * Returns either `{ data: validatedOutput }` on success or `{ error: validationError }`
-   * on failure. Validation errors trigger the feedback manager's self-correction loop,
-   * allowing the LLM to fix malformed outputs.
+   * Returns `{ data }` on success or `{ error }` on failure. Errors trigger the agent's
+   * self-correction loop, allowing the LLM to fix its output before the cycle limit is hit.
    */
   OUTPUT_BUILDER: ((param) => {
     if (param.type === 'json') {
-      if (param.parsedContent === null) {
+      let candidate: Record<string, unknown> | null = param.parsedContent;
+      if (candidate === null) {
+        try {
+          const repaired = JSON.parse(jsonrepair(param.content));
+          if (repaired !== null && typeof repaired === 'object' && !Array.isArray(repaired)) {
+            candidate = repaired as Record<string, unknown>;
+          }
+        } catch {
+          // jsonrepair couldn't recover anything usable
+        }
+      }
+      if (candidate === null) {
         return {
           error: new Error(
             'Your response could not be parsed as JSON. Return a raw JSON object only — no markdown code fences, no surrounding text.',
           ),
         };
       }
-      const { error, data } = param.outputFormat.safeParse(param.parsedContent);
+      const { error, data } = param.outputFormat.safeParse(candidate);
       return error ? { error } : { data };
     }
     if (param.type === 'text') {
