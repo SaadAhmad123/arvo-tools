@@ -682,11 +682,17 @@ export const agentLoop = async (
               role: 'user',
               content: {
                 type: 'text',
-                content: JSON.stringify({
-                  type: 'error',
-                  name: outputResult.error.name,
-                  message: outputResult.error.message,
-                }),
+                content: cleanString(`
+                  Your previous response could not be used because: ${outputResult.error.message}
+
+                  You MUST follow these rules in your next response:
+                  1. Return ONLY a raw JSON object — no explanations, no preamble, no trailing text.
+                  2. Do NOT wrap the JSON in markdown code fences (no \`\`\`json\`\`\` blocks).
+                  3. Do NOT mix prose and JSON in the same response — your entire response must be parseable JSON.
+                  4. The JSON must match the required schema exactly.
+
+                  Try again.
+                `),
               },
               seenCount: 0,
             });
